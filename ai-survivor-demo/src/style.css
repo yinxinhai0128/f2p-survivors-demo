@@ -1,0 +1,19 @@
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #121722;
+  color: #f6f1e7;
+  font-family:
+    Inter,
+    "Microsoft YaHei",
+    Arial,
+    sans-serif;
+}
+
+canvas {
+  display: block;
+}
