@@ -88,6 +88,9 @@ export class GameScene extends Phaser.Scene {
   private fireTrailElapsed = 0;
   private hpRegen = 0;
   private hpRegenElapsed = 0;
+  private waveElapsed = 0;
+  private waveActive = false;
+  private waveDuration = 0;
   private orbitCount = 1;
   private auraSlow = false;
   private attackElapsed = START_ATTACK_INTERVAL;
@@ -146,6 +149,7 @@ export class GameScene extends Phaser.Scene {
     this.updateFireTrail(delta);
     this.updateHpRegen(delta);
     this.updateAuraSlow();
+    this.updateWave(delta);
     this.updateXpCollection();
     this.updateLootCollection();
     this.cleanupBullets(delta);
@@ -182,6 +186,9 @@ export class GameScene extends Phaser.Scene {
     this.fireTrailElapsed = 0;
     this.hpRegen = 0;
     this.hpRegenElapsed = 0;
+    this.waveElapsed = 0;
+    this.waveActive = false;
+    this.waveDuration = 0;
     this.orbitCount = 1;
     this.auraSlow = false;
     this.attackElapsed = START_ATTACK_INTERVAL;
@@ -595,7 +602,7 @@ export class GameScene extends Phaser.Scene {
       case 'fast': return { hpMul: 0.5, speedMul: 1.7, damageMul: 0.8, tex: 'enemy_fast' };
       case 'tank': return { hpMul: 3, speedMul: 0.5, damageMul: 1.5, tex: 'enemy_tank' };
       case 'elite': return { hpMul: 2.2, speedMul: 1.2, damageMul: 2, tex: 'enemy_elite' };
-      case 'boss': return { hpMul: 15, speedMul: 0.6, damageMul: 3, tex: Phaser.Utils.Array.GetRandom(['boss_demon', 'boss_eye', 'boss_reaper']) };
+      case 'boss': return { hpMul: 75, speedMul: 0.6, damageMul: 3, tex: Phaser.Utils.Array.GetRandom(['boss_demon', 'boss_eye', 'boss_reaper']) };
       default: return { hpMul: 1, speedMul: 1, damageMul: 1, tex: 'enemy' };
     }
   }
@@ -649,7 +656,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnEnemiesWhenReady() {
-    const spawnInterval = Math.max(360, 1100 - this.level * 45);
+    const baseInterval = Math.max(360, 1100 - this.level * 45);
+    const spawnInterval = this.waveActive ? Math.max(120, baseInterval / 4) : baseInterval;
     while (this.spawnElapsed >= spawnInterval) {
       this.spawnElapsed -= spawnInterval;
       this.spawnEnemy();
@@ -1241,6 +1249,7 @@ export class GameScene extends Phaser.Scene {
 
   private collectLoot(orb: Phaser.Physics.Arcade.Image) {
     const lootType = orb.getData('lootType') as LootType;
+    const val = orb.getData('value') as number;
     orb.destroy();
 
     if (lootType === 'magnet') {
@@ -1253,23 +1262,22 @@ export class GameScene extends Phaser.Scene {
       });
       this.lootDrops.getChildren().forEach((child) => {
         const o = child as Phaser.Physics.Arcade.Image;
-        // Skip other magnets to avoid recursive pulls
         if (o.active && o.getData('lootType') !== 'magnet') allOrbs.push(o);
       });
 
-      allOrbs.forEach((orb) => {
-        const dist = Phaser.Math.Distance.Between(orb.x, orb.y, this.player.x, this.player.y);
+      allOrbs.forEach((o) => {
+        const dist = Phaser.Math.Distance.Between(o.x, o.y, this.player.x, this.player.y);
         const duration = Math.max(150, Math.min(500, dist / 2));
         this.tweens.add({
-          targets: orb, x: this.player.x, y: this.player.y,
+          targets: o, x: this.player.x, y: this.player.y,
           duration, ease: 'Sine.easeIn',
           onComplete: () => {
-            if (!orb.active) return;
-            const lt = orb.getData('lootType') as LootType | undefined;
+            if (!o.active) return;
+            const lt = o.getData('lootType') as LootType | undefined;
             if (lt) {
-              this.collectLoot(orb);
+              this.collectLoot(o);
             } else {
-              this.collectXp(orb);
+              this.collectXp(o);
             }
           }
         });
@@ -1279,7 +1287,6 @@ export class GameScene extends Phaser.Scene {
       this.stats.hp = Math.min(this.stats.maxHp, this.stats.hp + 25);
       this.showHitText(this.player.x, this.player.y - 20, `+${healed} 生命`, '#4caf50');
     } else if (lootType === 'gold') {
-      const val = orb.getData('value') as number;
       this.gold += val;
       this.showHitText(this.player.x, this.player.y - 20, `+${val} 金币 (共 ${this.gold})`, '#ffc107');
     }
@@ -1781,6 +1788,28 @@ export class GameScene extends Phaser.Scene {
     closeBtn.on('pointerover', () => closeBtn.setFillStyle(0x777777, 0.9));
     closeBtn.on('pointerout', () => closeBtn.setFillStyle(0x555555, 0.9));
     closeBtn.on('pointerdown', () => popupEls.forEach((el) => el.destroy()));
+  }
+
+  /* ========== MONSTER WAVE ========== */
+
+  private updateWave(delta: number) {
+    this.waveElapsed += delta;
+    if (this.waveActive) {
+      this.waveDuration += delta;
+      if (this.waveDuration >= 10_000) {
+        this.waveActive = false;
+        this.waveDuration = 0;
+        this.waveElapsed = 0;
+        this.hud.message.setText('WASD 移动 | 自动攻击 | 击杀敌人升级');
+      } else {
+        const remaining = Math.ceil((10_000 - this.waveDuration) / 1000);
+        this.hud.message.setText(`⚠ 怪物大潮! 剩余 ${remaining}秒`);
+      }
+    } else if (this.waveElapsed >= 35_000) {
+      this.waveActive = true;
+      this.waveDuration = 0;
+      this.waveElapsed = 0;
+    }
   }
 
   /* ========== EVOLUTION MECHANICS ========== */
