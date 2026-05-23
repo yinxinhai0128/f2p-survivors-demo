@@ -1,7 +1,8 @@
 {
-  "name": "vampire-survivors-like-demo",
-  "version": "0.1.0",
+  "name": "free-to-play-survivorgame",
+  "version": "0.2.0",
   "private": true,
+  "description": "A Vampire Survivors / Survivor.io style web game built with Phaser 3 + TypeScript + Vite. Features auto-attack, level-up skill choices, skill evolution (Lv.5), BOSS battles, monster waves, loot drops, and F2P monetization mocks.",
   "type": "module",
   "scripts": {
     "dev": "vite",
