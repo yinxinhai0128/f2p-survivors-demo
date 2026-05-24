@@ -5,7 +5,9 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #11151c;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(38, 210, 255, 0.12), transparent 34%),
+    linear-gradient(135deg, #05080d 0%, #101722 48%, #090d14 100%);
   color: #f6f1e7;
   font-family:
     Inter,

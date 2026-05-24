@@ -40,7 +40,7 @@ const START_ATTACK_INTERVAL = 900;
 const MIN_ATTACK_INTERVAL = 200;
 const ATTACK_RANGE = 350;
 const BOSS_INTERVAL_MS = 55_000;
-const VERSION = 'mvp-v2';
+const VERSION = 'ai-lab-polish-v1';
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Image;
@@ -51,6 +51,8 @@ export class GameScene extends Phaser.Scene {
   private keys!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
 
   private hud!: {
+    brand: Phaser.GameObjects.Text;
+    objective: Phaser.GameObjects.Text;
     hp: Phaser.GameObjects.Text;
     level: Phaser.GameObjects.Text;
     xp: Phaser.GameObjects.Text;
@@ -215,76 +217,92 @@ export class GameScene extends Phaser.Scene {
   private createTextures() {
     const g = this.add.graphics();
 
-    // Player: blue circle with glow ring + highlight arc
-    g.fillStyle(0x1a6b9e);
+    // Player: lab operator drone with a cyan visor and containment shield.
+    g.fillStyle(0x071a25);
     g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
-    g.fillStyle(0x4fc3f7);
-    g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 3);
-    g.fillStyle(0xb3e5fc);
-    g.fillCircle(PLAYER_RADIUS - 4, PLAYER_RADIUS - 4, 6);
-    g.lineStyle(3, 0xffffff, 0.9);
-    g.strokeCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
+    g.lineStyle(3, 0x67e8f9, 0.9);
+    g.strokeCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 1);
+    g.fillStyle(0x0f2d3a);
+    g.fillRoundedRect(8, 10, 20, 18, 5);
+    g.lineStyle(2, 0x93f4ff, 0.85);
+    g.strokeRoundedRect(8, 10, 20, 18, 5);
+    g.fillStyle(0x8df7ff);
+    g.fillRoundedRect(12, 14, 12, 5, 2);
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(14, 15, 2);
+    g.lineStyle(2, 0x1ee7b7, 0.75);
+    g.beginPath();
+    g.arc(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 5, -0.2, 1.25);
+    g.strokePath();
     g.generateTexture('player', PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
     g.clear();
 
-    // Normal enemy: red square with dark border
-    g.fillStyle(0xef5350);
-    g.fillRect(0, 0, ENEMY_SIZE, ENEMY_SIZE);
-    g.lineStyle(2, 0xb71c1c, 0.95);
-    g.strokeRect(1, 1, ENEMY_SIZE - 2, ENEMY_SIZE - 2);
-    // eyes
+    // Normal enemy: corrupted test bot.
+    g.fillStyle(0x30080d);
+    g.fillRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
+    g.fillStyle(0xe11d48);
+    g.fillRoundedRect(5, 6, ENEMY_SIZE - 10, ENEMY_SIZE - 12, 3);
+    g.lineStyle(2, 0xff6b8a, 0.9);
+    g.strokeRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
+    g.lineStyle(1, 0xff9fb3, 0.55);
+    g.lineBetween(8, 2, 8, 0);
+    g.lineBetween(22, 2, 22, 0);
     g.fillStyle(0xffffff);
-    g.fillCircle(10, 10, 3);
-    g.fillCircle(20, 10, 3);
-    g.fillStyle(0x000000);
-    g.fillCircle(10, 10, 1.5);
-    g.fillCircle(20, 10, 1.5);
+    g.fillCircle(10, 14, 3);
+    g.fillCircle(20, 14, 3);
+    g.fillStyle(0x111827);
+    g.fillCircle(10, 14, 1.5);
+    g.fillCircle(20, 14, 1.5);
+    g.fillStyle(0xffd166);
+    g.fillRect(8, 22, 14, 2);
     g.generateTexture('enemy', ENEMY_SIZE, ENEMY_SIZE);
     g.clear();
 
-    // Fast enemy: orange upward triangle (arrow shape = speed)
-    g.fillStyle(0xff9800);
+    // Fast enemy: rogue data shard.
+    g.fillStyle(0xff8a00);
     g.fillTriangle(15, 2, 2, 28, 28, 28);
-    g.lineStyle(2, 0xffcc80, 0.9);
+    g.fillStyle(0xffc46b);
+    g.fillTriangle(15, 7, 8, 25, 22, 25);
+    g.lineStyle(2, 0xfff0c2, 0.9);
     g.strokeTriangle(15, 2, 2, 28, 28, 28);
-    g.fillStyle(0xffffff);
-    g.fillCircle(13, 18, 3);
-    g.fillCircle(19, 18, 3);
-    g.fillStyle(0x000000);
-    g.fillCircle(13, 18, 1.5);
-    g.fillCircle(19, 18, 1.5);
+    g.lineStyle(1, 0x451a03, 0.9);
+    g.lineBetween(15, 8, 15, 23);
+    g.lineBetween(10, 21, 20, 21);
     g.generateTexture('enemy_fast', ENEMY_SIZE, ENEMY_SIZE);
     g.clear();
 
-    // Tank enemy: dark red larger square with thick gold border
-    g.fillStyle(0x8b0000);
-    g.fillRect(0, 0, 34, 34);
-    g.fillStyle(0xb71c1c);
-    g.fillRect(3, 3, 28, 28);
-    g.lineStyle(3, 0xffd700, 0.9);
-    g.strokeRect(1, 1, 32, 32);
-    g.fillStyle(0xffffff);
-    g.fillCircle(11, 13, 4);
-    g.fillCircle(23, 13, 4);
-    g.fillStyle(0x000000);
-    g.fillCircle(11, 13, 2);
-    g.fillCircle(23, 13, 2);
+    // Tank enemy: armored firewall block.
+    g.fillStyle(0x141017);
+    g.fillRoundedRect(0, 0, 34, 34, 4);
+    g.fillStyle(0x7f1d1d);
+    g.fillRoundedRect(4, 4, 26, 26, 3);
+    g.lineStyle(3, 0xfbbf24, 0.9);
+    g.strokeRoundedRect(1, 1, 32, 32, 4);
+    g.fillStyle(0xfff7ad);
+    g.fillRect(8, 10, 18, 4);
+    g.fillStyle(0x111827);
+    g.fillRect(10, 20, 14, 4);
+    g.lineStyle(1, 0xfde68a, 0.55);
+    g.lineBetween(6, 28, 28, 6);
     g.generateTexture('enemy_tank', 34, 34);
     g.clear();
 
-    // Elite enemy: purple with white border, slightly larger
-    g.fillStyle(0x7c4dff);
-    g.fillRect(0, 0, 32, 32);
-    g.fillStyle(0xb388ff);
-    g.fillRect(3, 3, 26, 26);
-    g.lineStyle(2, 0xffffff, 0.95);
-    g.strokeRect(1, 1, 30, 30);
+    // Elite enemy: unstable neural cluster.
+    g.fillStyle(0x24113f);
+    g.fillCircle(16, 16, 16);
+    g.fillStyle(0x8b5cf6);
+    g.fillCircle(16, 16, 12);
+    g.lineStyle(2, 0xd8b4fe, 0.95);
+    g.strokeCircle(16, 16, 15);
+    g.lineStyle(1.5, 0xffffff, 0.75);
+    g.lineBetween(9, 12, 16, 8);
+    g.lineBetween(16, 8, 23, 12);
+    g.lineBetween(9, 20, 16, 24);
+    g.lineBetween(16, 24, 23, 20);
     g.fillStyle(0xffffff);
-    g.fillCircle(10, 11, 3.5);
-    g.fillCircle(22, 11, 3.5);
-    g.fillStyle(0x000000);
-    g.fillCircle(10, 11, 2);
-    g.fillCircle(22, 11, 2);
+    g.fillCircle(16, 16, 4);
+    g.fillStyle(0x2e1065);
+    g.fillCircle(16, 16, 2);
     g.generateTexture('enemy_elite', 32, 32);
     g.clear();
 
@@ -386,19 +404,23 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('boss_reaper', BOSS_SIZE, BOSS_SIZE);
     g.clear();
 
-    // Bullet: small bright yellow dot
-    g.fillStyle(0xffee58);
-    g.fillCircle(5, 5, 4);
+    // Bullet: cyan data pulse.
+    g.fillStyle(0x22d3ee, 0.35);
+    g.fillCircle(5, 5, 5);
+    g.fillStyle(0x67e8f9);
+    g.fillCircle(5, 5, 3.5);
     g.fillStyle(0xffffff);
-    g.fillCircle(5, 5, 2);
+    g.fillCircle(4, 4, 1.5);
     g.generateTexture('bullet', 10, 10);
     g.clear();
 
-    // XP orb: tiny green dot
-    g.fillStyle(0x69f0ae);
-    g.fillCircle(4, 4, 3.5);
-    g.lineStyle(1, 0xb9f6ca, 0.9);
-    g.strokeCircle(4, 4, 3.5);
+    // XP orb: recovered data fragment.
+    g.fillStyle(0x34d399);
+    g.fillTriangle(4, 0, 8, 4, 4, 8);
+    g.fillStyle(0xa7f3d0);
+    g.fillTriangle(4, 2, 6, 4, 4, 6);
+    g.lineStyle(1, 0xd1fae5, 0.9);
+    g.strokeTriangle(4, 0, 8, 4, 4, 8);
     g.generateTexture('xp', 8, 8);
     g.clear();
 
@@ -449,19 +471,21 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('loot_health', bw, bh);
     g.clear();
 
-    // Gold: shiny coin with rim
+    // Gold/currency: compute credit chip.
     const gr = 10;
-    // Outer rim
-    g.fillStyle(0xf9a825);
-    g.fillCircle(gr, gr, gr);
-    g.lineStyle(1.5, 0xff8f00, 0.9);
-    g.strokeCircle(gr, gr, gr - 1);
-    // Inner circle
-    g.fillStyle(0xffd54f);
-    g.fillCircle(gr, gr, gr - 3);
-    // Shine highlight
-    g.fillStyle(0xffecb3, 0.7);
-    g.fillCircle(gr - 2, gr - 3, 3);
+    g.fillStyle(0xfacc15);
+    g.fillRoundedRect(1, 1, 18, 18, 3);
+    g.fillStyle(0x111827);
+    g.fillRoundedRect(5, 5, 10, 10, 2);
+    g.lineStyle(1.5, 0xfff7ad, 0.9);
+    g.strokeRoundedRect(1, 1, 18, 18, 3);
+    g.lineStyle(1, 0xfff7ad, 0.65);
+    g.lineBetween(5, 2, 5, 0);
+    g.lineBetween(10, 2, 10, 0);
+    g.lineBetween(15, 2, 15, 0);
+    g.lineBetween(5, 20, 5, 18);
+    g.lineBetween(10, 20, 10, 18);
+    g.lineBetween(15, 20, 15, 18);
     g.generateTexture('loot_gold', gr * 2, gr * 2);
     g.clear();
 
@@ -473,8 +497,12 @@ export class GameScene extends Phaser.Scene {
   private createWorld() {
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     this.add
-      .grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 80, 80, 0x1d2430, 0.45, 0x2a3444, 0.55)
-      .setDepth(-20);
+      .rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 0x07111a, 1)
+      .setDepth(-35);
+    this.add
+      .grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 80, 80, 0x0e1b27, 0.85, 0x1d3a4c, 0.65)
+      .setDepth(-30);
+    this.createLabDecor();
 
     this.player = this.physics.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 'player');
     this.player.setCircle(PLAYER_RADIUS);
@@ -493,6 +521,70 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
   }
 
+  private createLabDecor() {
+    const decorDepth = -25;
+    const hazard = 0xf59e0b;
+    const panel = 0x0b1722;
+    const panelStroke = 0x1f5f73;
+
+    for (let y = 420; y < WORLD_HEIGHT; y += 620) {
+      for (let x = 420; x < WORLD_WIDTH; x += 760) {
+        this.add.rectangle(x, y, 240, 130, panel, 0.82)
+          .setStrokeStyle(2, panelStroke, 0.55)
+          .setDepth(decorDepth);
+        this.add.rectangle(x, y - 46, 170, 8, 0x123244, 0.9).setDepth(decorDepth + 1);
+        this.add.rectangle(x - 78, y + 32, 42, 42, 0x0f2a36, 0.85)
+          .setStrokeStyle(2, 0x38bdf8, 0.4)
+          .setDepth(decorDepth + 1);
+        this.add.circle(x + 82, y + 30, 25, 0x0c2430, 0.9)
+          .setStrokeStyle(2, 0x22d3ee, 0.45)
+          .setDepth(decorDepth + 1);
+        this.add.text(x - 92, y - 24, 'AI NODE', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '12px',
+          color: '#67e8f9'
+        }).setDepth(decorDepth + 2).setAlpha(0.55);
+      }
+    }
+
+    const lines = [
+      [260, 250, 1320, 250],
+      [1320, 250, 1320, 980],
+      [2850, 420, 3820, 420],
+      [2850, 420, 2850, 1260],
+      [520, 2310, 1680, 2310],
+      [2470, 2080, 3650, 2080]
+    ];
+    lines.forEach(([x1, y1, x2, y2]) => {
+      this.add.line(0, 0, x1, y1, x2, y2, 0x22d3ee, 0.28).setOrigin(0).setDepth(decorDepth + 1);
+      this.add.line(0, 0, x1, y1 + 8, x2, y2 + 8, 0x14b8a6, 0.16).setOrigin(0).setDepth(decorDepth + 1);
+    });
+
+    const zones = [
+      { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, label: 'CONTAINMENT CORE' },
+      { x: 740, y: 760, label: 'DATA FARM' },
+      { x: 3440, y: 840, label: 'MODEL VAULT' },
+      { x: 1060, y: 2460, label: 'POWER BAY' },
+      { x: 3220, y: 2260, label: 'RED TEAM LAB' }
+    ];
+    zones.forEach((zone) => {
+      this.add.circle(zone.x, zone.y, 96, 0x0b2530, 0.24)
+        .setStrokeStyle(3, 0x22d3ee, 0.24)
+        .setDepth(decorDepth);
+      this.add.text(zone.x, zone.y + 112, zone.label, {
+        fontFamily: 'Arial, sans-serif',
+        fontSize: '13px',
+        color: '#7dd3fc'
+      }).setOrigin(0.5).setDepth(decorDepth + 1).setAlpha(0.55);
+    });
+
+    for (let i = 0; i < 24; i++) {
+      const x = (i % 12) * 340 + 120;
+      const y = i < 12 ? 96 : WORLD_HEIGHT - 96;
+      this.add.rectangle(x, y, 150, 12, i % 2 === 0 ? hazard : 0x111827, 0.75).setDepth(decorDepth + 2);
+    }
+  }
+
   /* ========== HUD ========== */
 
   private createHud() {
@@ -504,21 +596,47 @@ export class GameScene extends Phaser.Scene {
       strokeThickness: 4
     };
 
+    this.add.rectangle(142, 94, 264, 168, 0x061018, 0.78)
+      .setStrokeStyle(2, 0x22d3ee, 0.45)
+      .setScrollFactor(0)
+      .setDepth(95);
+    this.add.rectangle(142, 30, 264, 30, 0x0d2a36, 0.92)
+      .setStrokeStyle(1, 0x67e8f9, 0.5)
+      .setScrollFactor(0)
+      .setDepth(96);
+    this.add.rectangle(this.scale.width / 2, 28, 370, 40, 0x061018, 0.72)
+      .setStrokeStyle(1, 0x22d3ee, 0.38)
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(95);
+
     this.hud = {
-      hp: this.add.text(18, 16, '', style).setScrollFactor(0).setDepth(100),
-      level: this.add.text(18, 42, '', style).setScrollFactor(0).setDepth(100),
-      xp: this.add.text(18, 68, '', style).setScrollFactor(0).setDepth(100),
-      time: this.add.text(18, 94, '', style).setScrollFactor(0).setDepth(100),
-      stats: this.add.text(18, 126, '', { ...style, fontSize: '14px' }).setScrollFactor(0).setDepth(100),
-      gold: this.add.text(0, 16, '', { ...style, fontSize: '20px', color: '#ffd700' }).setScrollFactor(0).setDepth(100),
+      brand: this.add.text(22, 18, 'AI 失控实验室', {
+        ...style,
+        fontSize: '17px',
+        color: '#8df7ff',
+        strokeThickness: 3
+      }).setScrollFactor(0).setDepth(100),
+      objective: this.add.text(22, 44, '目标: 坚持到隔离门解锁', {
+        ...style,
+        fontSize: '13px',
+        color: '#9fb6c8',
+        strokeThickness: 2
+      }).setScrollFactor(0).setDepth(100),
+      hp: this.add.text(22, 68, '', { ...style, fontSize: '16px' }).setScrollFactor(0).setDepth(100),
+      level: this.add.text(22, 92, '', { ...style, fontSize: '16px' }).setScrollFactor(0).setDepth(100),
+      xp: this.add.text(22, 116, '', { ...style, fontSize: '16px' }).setScrollFactor(0).setDepth(100),
+      time: this.add.text(22, 140, '', { ...style, fontSize: '16px' }).setScrollFactor(0).setDepth(100),
+      stats: this.add.text(22, 160, '', { ...style, fontSize: '13px', color: '#b7c9d9' }).setScrollFactor(0).setDepth(100),
+      gold: this.add.text(0, 16, '', { ...style, fontSize: '18px', color: '#facc15' }).setScrollFactor(0).setDepth(100),
       message: this.add
-        .text(this.scale.width / 2, 24, 'WASD 移动 | 自动攻击 | 击杀敌人升级', { ...style, fontSize: '16px' })
+        .text(this.scale.width / 2, 18, 'WASD 移动 | 自动火控 | 回收数据碎片升级', { ...style, fontSize: '15px', color: '#e0faff' })
         .setOrigin(0.5, 0).setScrollFactor(0).setDepth(100),
-      bossHp: this.add.text(0, 0, '', { ...style, fontSize: '16px', color: '#ff5252' })
+      bossHp: this.add.text(0, 0, '', { ...style, fontSize: '16px', color: '#ff6b8a' })
         .setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false),
-      bossBarBg: this.add.rectangle(0, 0, 300, 10, 0x333333, 0.8)
+      bossBarBg: this.add.rectangle(0, 0, 320, 12, 0x111827, 0.9)
         .setScrollFactor(0).setDepth(100).setVisible(false),
-      bossBar: this.add.rectangle(0, 0, 300, 10, 0xff1744, 1)
+      bossBar: this.add.rectangle(0, 0, 320, 12, 0xff1744, 1)
         .setScrollFactor(0).setDepth(101).setVisible(false)
     };
 
@@ -533,28 +651,28 @@ export class GameScene extends Phaser.Scene {
     const w = this.scale.width;
     this.hud.bossHp.setPosition(w / 2, 60);
     this.hud.bossBarBg.setPosition(w / 2, 82);
-    this.hud.bossBar.setPosition(w / 2 - 150, 82);
+    this.hud.bossBar.setPosition(w / 2 - 160, 82);
     this.hud.bossBar.setOrigin(0, 0.5);
   }
 
   private createCommercialMock() {
     const buttonConfigs = [
-      { label: '广告升级', action: () => this.tryAdUpgrade() },
-      { label: '双倍经验', action: () => this.toggleDoubleXp() },
-      { label: '战斗通行证', action: () => this.showBattlePassMock() }
+      { label: 'AI 赞助升级', action: () => this.tryAdUpgrade() },
+      { label: '算力双倍', action: () => this.toggleDoubleXp() },
+      { label: '研究通行证', action: () => this.showBattlePassMock() }
     ];
 
     this.commercialButtons = [];
     buttonConfigs.forEach((config) => {
-      const bg = this.add.rectangle(0, 0, 150, 34, 0x222b38, 0.9)
-        .setStrokeStyle(2, 0x69d8ff, 0.7).setScrollFactor(0).setDepth(100)
+      const bg = this.add.rectangle(0, 0, 156, 36, 0x061018, 0.86)
+        .setStrokeStyle(2, 0x22d3ee, 0.62).setScrollFactor(0).setDepth(100)
         .setInteractive({ useHandCursor: true });
       const label = this.add.text(0, 0, config.label, {
-        fontFamily: 'Arial, sans-serif', fontSize: '15px', color: '#f6f1e7'
+        fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '14px', color: '#e0faff'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
 
-      bg.on('pointerover', () => bg.setFillStyle(0x314056, 0.98));
-      bg.on('pointerout', () => bg.setFillStyle(0x222b38, 0.9));
+      bg.on('pointerover', () => bg.setFillStyle(0x103444, 0.98));
+      bg.on('pointerout', () => bg.setFillStyle(0x061018, 0.86));
       bg.on('pointerdown', config.action);
       this.commercialButtons.push(bg, label);
     });
@@ -565,7 +683,7 @@ export class GameScene extends Phaser.Scene {
   private layoutCommercialButtons() {
     for (let i = 0; i < this.commercialButtons.length; i += 2) {
       const row = i / 2;
-      const x = this.scale.width - 96;
+      const x = this.scale.width - 106;
       const y = 24 + row * 44;
       (this.commercialButtons[i] as Phaser.GameObjects.Rectangle).setPosition(x, y);
       (this.commercialButtons[i + 1] as Phaser.GameObjects.Text).setPosition(x, y);
@@ -684,9 +802,9 @@ export class GameScene extends Phaser.Scene {
 
   private showBossAlert() {
     const w = this.scale.width;
-    const txt = this.add.text(w / 2, this.scale.height / 2 - 100, '⚠ BOSS 来袭!', {
+    const txt = this.add.text(w / 2, this.scale.height / 2 - 100, '警报: 失控核心上线', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif',
-      fontSize: '40px', color: '#ff1744', stroke: '#000', strokeThickness: 8
+      fontSize: '40px', color: '#ff6b8a', stroke: '#000', strokeThickness: 8
     }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
 
     this.tweens.add({
@@ -1126,7 +1244,7 @@ export class GameScene extends Phaser.Scene {
     this.dropLoot(x, y - 10, 'gold');
 
     const w = this.scale.width;
-    const txt = this.add.text(w / 2, this.scale.height / 2 - 60, 'BOSS 击败!', {
+    const txt = this.add.text(w / 2, this.scale.height / 2 - 60, '失控核心已隔离', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif',
       fontSize: '32px', color: '#ffd700', stroke: '#000', strokeThickness: 6
     }).setOrigin(0.5).setScrollFactor(0).setDepth(400);
@@ -1253,7 +1371,7 @@ export class GameScene extends Phaser.Scene {
     orb.destroy();
 
     if (lootType === 'magnet') {
-      this.showHitText(this.player.x, this.player.y - 20, '磁铁!', '#448aff');
+      this.showHitText(this.player.x, this.player.y - 20, '全域回收', '#67e8f9');
       // Instantly pull and collect ALL XP orbs and loot on the field
       const allOrbs: Phaser.Physics.Arcade.Image[] = [];
       this.xpOrbs.getChildren().forEach((child) => {
@@ -1288,7 +1406,7 @@ export class GameScene extends Phaser.Scene {
       this.showHitText(this.player.x, this.player.y - 20, `+${healed} 生命`, '#4caf50');
     } else if (lootType === 'gold') {
       this.gold += val;
-      this.showHitText(this.player.x, this.player.y - 20, `+${val} 金币 (共 ${this.gold})`, '#ffc107');
+      this.showHitText(this.player.x, this.player.y - 20, `+${val} 算力 (共 ${this.gold})`, '#ffc107');
     }
   }
 
@@ -1317,32 +1435,32 @@ export class GameScene extends Phaser.Scene {
     this.player.setVelocity(0, 0);
 
     const evoPreviews: Record<SkillId, string> = {
-      attackSpeed: '【质变Lv5】攻击间隔减半 + 子弹+1',
-      bulletCount: '【质变Lv5】子弹可穿透敌人3次',
-      damage: '【质变Lv5】30%暴击率 暴击x2伤害',
-      moveSpeed: '【质变Lv5】移动留下火焰轨迹',
-      heal: '【质变Lv5】生命上限+50 每秒回复2点',
-      orbit: '【质变Lv5】3重环绕 伤害翻倍',
-      aura: '【质变Lv5】光环范围翻倍 减速敌人'
+      attackSpeed: '【质变Lv5】神经脉冲过载: 间隔减半 + 脉冲+1',
+      bulletCount: '【质变Lv5】分布式弹道: 脉冲穿透3次',
+      damage: '【质变Lv5】红队漏洞: 30%暴击 x2伤害',
+      moveSpeed: '【质变Lv5】离子尾迹: 移动留下灼烧轨迹',
+      heal: '【质变Lv5】纳米修复舱: 生命上限+50 每秒回复2点',
+      orbit: '【质变Lv5】三重防火墙: 3重环绕 伤害翻倍',
+      aura: '【质变Lv5】EMP 场域: 范围翻倍并减速敌人'
     };
     const baseDescriptions: Record<SkillId, string> = {
-      attackSpeed: '攻击间隔 -15%',
-      bulletCount: '每次 +1 发',
-      damage: '子弹伤害 +6~14',
-      moveSpeed: '移速 +12%',
-      heal: '恢复 30~50 点生命',
-      orbit: '周期性范围伤害',
-      aura: '周期性近身伤害'
+      attackSpeed: '火控脉冲频率提升，攻击间隔 -15%',
+      bulletCount: '追加一条并行弹道，每次 +1 发',
+      damage: '注入红队脚本，脉冲伤害 +6~14',
+      moveSpeed: '外骨骼推进，移速 +12%',
+      heal: '启动纳米凝胶，恢复 30~50 点生命',
+      orbit: '部署防火墙卫星，周期性范围伤害',
+      aura: '释放电磁干扰，周期性近身伤害'
     };
 
     const allSkills: SkillOption[] = ([
-      { id: 'attackSpeed' as SkillId, title: '攻击速度提升', description: '' },
-      { id: 'bulletCount' as SkillId, title: '子弹数量提升', description: '' },
-      { id: 'damage' as SkillId, title: '伤害提升', description: '' },
-      { id: 'moveSpeed' as SkillId, title: '移速提升', description: '' },
-      { id: 'heal' as SkillId, title: '回血', description: '' },
-      { id: 'orbit' as SkillId, title: '环绕护体', description: '' },
-      { id: 'aura' as SkillId, title: '腐蚀光环', description: '' }
+      { id: 'attackSpeed' as SkillId, title: '神经脉冲频率', description: '' },
+      { id: 'bulletCount' as SkillId, title: '分布式弹道', description: '' },
+      { id: 'damage' as SkillId, title: '红队漏洞注入', description: '' },
+      { id: 'moveSpeed' as SkillId, title: '外骨骼推进', description: '' },
+      { id: 'heal' as SkillId, title: '纳米修复', description: '' },
+      { id: 'orbit' as SkillId, title: '防火墙卫星', description: '' },
+      { id: 'aura' as SkillId, title: 'EMP 干扰场', description: '' }
     ] as SkillOption[]).map((s) => {
       const lv = this.skillLevels[s.id];
       const base = baseDescriptions[s.id];
@@ -1370,9 +1488,9 @@ export class GameScene extends Phaser.Scene {
     const D = 300;
 
     const darkBg = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.55).setScrollFactor(0).setDepth(D);
-    const panel = this.add.rectangle(px, py, panelW, panelH, 0x1a2332, 0.98).setStrokeStyle(2, 0x4fc3f7, 0.6).setScrollFactor(0).setDepth(D);
-    const title = this.add.text(px, py - panelH / 2 + 36, `Lv.${this.level}  选择一个强化`, {
-      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '24px', color: '#ffd966'
+    const panel = this.add.rectangle(px, py, panelW, panelH, 0x07111a, 0.98).setStrokeStyle(2, 0x22d3ee, 0.7).setScrollFactor(0).setDepth(D);
+    const title = this.add.text(px, py - panelH / 2 + 36, `权限 Lv.${this.level}  选择实验模块`, {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '24px', color: '#8df7ff'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
     this.overlayElements.push(darkBg, panel, title);
 
@@ -1386,7 +1504,7 @@ export class GameScene extends Phaser.Scene {
       const isEvo = this.skillLevels[skill.id] === 4;
       const cardBorderColor = isEvo ? 0xffd700 : (isNew ? 0x4caf50 : 0x5a6d80);
 
-      const cardBg = this.add.rectangle(cx, cy, cardW, 230, isNew ? 0x1a3a2a : (isEvo ? 0x1a1a10 : 0x151c28), 1)
+      const cardBg = this.add.rectangle(cx, cy, cardW, 230, isNew ? 0x0b2f2a : (isEvo ? 0x2a2205 : 0x0b1722), 1)
         .setStrokeStyle(isEvo ? 3 : 2, cardBorderColor, isEvo ? 0.9 : 0.6)
         .setScrollFactor(0).setDepth(D);
       const lvTag = this.add.text(cx, cy - 95, levelLbl + (isEvo ? ' → 质变!' : ''), {
@@ -1410,7 +1528,7 @@ export class GameScene extends Phaser.Scene {
       const btnBg = this.add.rectangle(cx, cy + 70, btnW, 34, btnColor, 1)
         .setStrokeStyle(1, btnStroke, 0.8)
         .setScrollFactor(0).setDepth(D).setInteractive({ useHandCursor: true });
-      const btnLabel = this.add.text(cx, cy + 70, isEvo ? '质变!' : '选择', {
+      const btnLabel = this.add.text(cx, cy + 70, isEvo ? '启动质变' : '装配模块', {
         fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '15px', color: '#ffffff'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
 
@@ -1486,13 +1604,13 @@ export class GameScene extends Phaser.Scene {
 
   private showEvolutionEffect(skillId: SkillId) {
     const names: Record<SkillId, string> = {
-      attackSpeed: '狂暴攻势', bulletCount: '穿透射击', damage: '致命一击',
-      moveSpeed: '烈焰轨迹', heal: '血之契约', orbit: '三星环绕', aura: '凋零光环'
+      attackSpeed: '神经脉冲过载', bulletCount: '分布式穿透弹道', damage: '红队漏洞爆破',
+      moveSpeed: '离子尾迹', heal: '纳米修复舱', orbit: '三重防火墙', aura: 'EMP 场域'
     };
     const w = this.scale.width;
-    const txt = this.add.text(w / 2, this.scale.height / 2 - 140, `✨ ${names[skillId]} 质变!`, {
+    const txt = this.add.text(w / 2, this.scale.height / 2 - 140, `${names[skillId]} 已解锁`, {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif',
-      fontSize: '34px', color: '#ffd700', stroke: '#000', strokeThickness: 8
+      fontSize: '34px', color: '#8df7ff', stroke: '#000', strokeThickness: 8
     }).setOrigin(0.5).setScrollFactor(0).setDepth(500);
 
     this.tweens.add({
@@ -1519,8 +1637,8 @@ export class GameScene extends Phaser.Scene {
     const darkBg = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.7).setScrollFactor(0).setDepth(D);
     this.overlayElements.push(darkBg);
 
-    const resultText = win ? '胜利!' : '阵亡';
-    const resultColor = win ? '#ffd700' : '#ff5252';
+    const resultText = win ? '隔离成功' : '实验员离线';
+    const resultColor = win ? '#8df7ff' : '#ff6b8a';
     const title = this.add.text(w / 2, h / 2 - 100, resultText, {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '42px',
       color: resultColor, stroke: '#000', strokeThickness: 6
@@ -1529,8 +1647,8 @@ export class GameScene extends Phaser.Scene {
 
     const statsLine = [
       `Lv.${this.level}`,
-      `${this.kills} Kills`,
-      `${this.gold} Gold`,
+      `清除 ${this.kills}`,
+      `算力 ${this.gold}`,
       `${Math.ceil(this.elapsedMs / 1000)}s`
     ].join('  |  ');
     const stats = this.add.text(w / 2, h / 2 - 20, statsLine, {
@@ -1540,10 +1658,10 @@ export class GameScene extends Phaser.Scene {
     this.overlayElements.push(stats);
 
     if (!win && !this.reviveUsed) {
-      const reviveBtn = this.add.rectangle(w / 2, h / 2 + 50, 220, 44, 0x8b4513, 0.9)
+      const reviveBtn = this.add.rectangle(w / 2, h / 2 + 50, 240, 44, 0x7c2d12, 0.9)
         .setStrokeStyle(2, 0xffd966, 0.8).setScrollFactor(0).setDepth(D)
         .setInteractive({ useHandCursor: true });
-      const reviveLabel = this.add.text(w / 2, h / 2 + 50, '看广告复活 (恢复50%生命)', {
+      const reviveLabel = this.add.text(w / 2, h / 2 + 50, '观看赞助补给 (恢复50%生命)', {
         fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '16px', color: '#ffd966'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
       reviveBtn.on('pointerover', () => reviveBtn.setFillStyle(0xa0522d, 0.95));
@@ -1552,10 +1670,10 @@ export class GameScene extends Phaser.Scene {
       this.overlayElements.push(reviveBtn, reviveLabel);
     }
 
-    const restartBtn = this.add.rectangle(w / 2, h / 2 + 110, 200, 44, 0x1565c0, 0.95)
-      .setStrokeStyle(2, 0x42a5f5, 0.8).setScrollFactor(0).setDepth(D)
+    const restartBtn = this.add.rectangle(w / 2, h / 2 + 110, 200, 44, 0x0e7490, 0.95)
+      .setStrokeStyle(2, 0x67e8f9, 0.8).setScrollFactor(0).setDepth(D)
       .setInteractive({ useHandCursor: true });
-    const restartLabel = this.add.text(w / 2, h / 2 + 110, '重新开始', {
+    const restartLabel = this.add.text(w / 2, h / 2 + 110, '重启实验', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px', color: '#f6f1e7'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
     restartBtn.on('pointerover', () => restartBtn.setFillStyle(0x1976d2, 0.98));
@@ -1571,7 +1689,7 @@ export class GameScene extends Phaser.Scene {
       .filter((id) => this.skillLevels[id] < 5);
 
     if (candidates.length === 0) {
-      const msg = this.add.text(this.scale.width / 2, 80, '所有技能已质变!', {
+      const msg = this.add.text(this.scale.width / 2, 80, '所有实验模块已完成质变', {
         fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px',
         color: '#ffd700', stroke: '#000', strokeThickness: 4
       }).setOrigin(0.5).setScrollFactor(0).setDepth(350);
@@ -1583,17 +1701,17 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
 
     const names: Record<SkillId, string> = {
-      attackSpeed: '攻击速度提升', bulletCount: '子弹数量提升', damage: '伤害提升',
-      moveSpeed: '移速提升', heal: '回血', orbit: '环绕护体', aura: '腐蚀光环'
+      attackSpeed: '神经脉冲频率', bulletCount: '分布式弹道', damage: '红队漏洞注入',
+      moveSpeed: '外骨骼推进', heal: '纳米修复', orbit: '防火墙卫星', aura: 'EMP 干扰场'
     };
     const evoPreviews: Record<SkillId, string> = {
-      attackSpeed: '攻击间隔减半 + 子弹+1',
-      bulletCount: '子弹穿透3个敌人',
+      attackSpeed: '间隔减半 + 脉冲+1',
+      bulletCount: '脉冲穿透3个失控单元',
       damage: '30%暴击率 暴击x2',
-      moveSpeed: '移动留下火焰轨迹',
-      heal: '生命上限+50 每秒回2血',
-      orbit: '3重环绕 伤害翻倍',
-      aura: '光环范围翻倍 减速敌人'
+      moveSpeed: '移动留下离子灼烧轨迹',
+      heal: '生命上限+50 每秒修复2点',
+      orbit: '3重防火墙 伤害翻倍',
+      aura: 'EMP 范围翻倍 减速敌人'
     };
 
     const w = this.scale.width;
@@ -1610,7 +1728,7 @@ export class GameScene extends Phaser.Scene {
     this.overlayElements.push(darkBg);
 
     // Title
-    const title = this.add.text(w / 2, h / 2 - 140, '选择一个技能直升 Lv.5 质变', {
+    const title = this.add.text(w / 2, h / 2 - 140, '选择一个实验模块直升 Lv.5', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '26px',
       color: '#ffd700', stroke: '#000', strokeThickness: 6
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
@@ -1658,7 +1776,7 @@ export class GameScene extends Phaser.Scene {
       const btnBg = this.add.rectangle(cx, cy + 62, cardW - 30, 32, 0xf9a825, 1)
         .setStrokeStyle(1, 0xffd700, 0.8).setScrollFactor(0).setDepth(D)
         .setInteractive({ useHandCursor: true });
-      const btnLabel = this.add.text(cx, cy + 62, '升满!', {
+      const btnLabel = this.add.text(cx, cy + 62, '授权升级', {
         fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '15px', color: '#1a1a1a'
       }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
 
@@ -1692,10 +1810,10 @@ export class GameScene extends Phaser.Scene {
     });
 
     const names: Record<SkillId, string> = {
-      attackSpeed: '攻击速度提升', bulletCount: '子弹数量提升', damage: '伤害提升',
-      moveSpeed: '移速提升', heal: '回血', orbit: '环绕护体', aura: '腐蚀光环'
+      attackSpeed: '神经脉冲频率', bulletCount: '分布式弹道', damage: '红队漏洞注入',
+      moveSpeed: '外骨骼推进', heal: '纳米修复', orbit: '防火墙卫星', aura: 'EMP 干扰场'
     };
-    const msg = this.add.text(this.scale.width / 2, 80, `广告升级: ${names[skillId]} → Lv.5 质变!`, {
+    const msg = this.add.text(this.scale.width / 2, 80, `赞助升级: ${names[skillId]} → Lv.5`, {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px',
       color: '#ffd700', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(350);
@@ -1743,7 +1861,7 @@ export class GameScene extends Phaser.Scene {
     this.clearOverlay();
     this.physics.world.resume();
 
-    const msg = this.add.text(this.scale.width / 2, 80, '已观看广告! 恢复 50% 生命', {
+    const msg = this.add.text(this.scale.width / 2, 80, '赞助补给已送达: 恢复 50% 生命', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px',
       color: '#ffd966', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(350);
@@ -1753,7 +1871,7 @@ export class GameScene extends Phaser.Scene {
   private toggleDoubleXp() {
     this.doubleXp = !this.doubleXp;
     const msg = this.add.text(this.scale.width / 2, 80,
-      this.doubleXp ? '双倍经验 ON' : '双倍经验 OFF', {
+      this.doubleXp ? '算力双倍 ON' : '算力双倍 OFF', {
         fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px',
         color: '#ffd966', stroke: '#000', strokeThickness: 4
       }).setOrigin(0.5).setScrollFactor(0).setDepth(350);
@@ -1765,13 +1883,13 @@ export class GameScene extends Phaser.Scene {
     const h = this.scale.height;
     const D = 350;
 
-    const bg = this.add.rectangle(w / 2, h / 2, 340, 260, 0x1e293b, 0.98)
-      .setStrokeStyle(2, 0xffd966, 0.8).setScrollFactor(0).setDepth(D);
-    const title = this.add.text(w / 2, h / 2 - 90, '战斗通行证', {
+    const bg = this.add.rectangle(w / 2, h / 2, 360, 260, 0x07111a, 0.98)
+      .setStrokeStyle(2, 0x22d3ee, 0.8).setScrollFactor(0).setDepth(D);
+    const title = this.add.text(w / 2, h / 2 - 90, '研究通行证', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '24px',
-      color: '#ffd966', stroke: '#000', strokeThickness: 4
+      color: '#8df7ff', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-    const desc = this.add.text(w / 2, h / 2, `当前金币: ${this.gold}\n即将上线...\n每日任务 | 等级奖励 | 高级通行证`, {
+    const desc = this.add.text(w / 2, h / 2, `当前算力: ${this.gold}\n即将上线...\n每日实验 | 节点奖励 | 高级研究许可`, {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '15px',
       color: '#a8bdd4', stroke: '#000', strokeThickness: 2, align: 'center'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
@@ -1800,10 +1918,10 @@ export class GameScene extends Phaser.Scene {
         this.waveActive = false;
         this.waveDuration = 0;
         this.waveElapsed = 0;
-        this.hud.message.setText('WASD 移动 | 自动攻击 | 击杀敌人升级');
+        this.hud.message.setText('WASD 移动 | 自动火控 | 回收数据碎片升级');
       } else {
         const remaining = Math.ceil((10_000 - this.waveDuration) / 1000);
-        this.hud.message.setText(`⚠ 怪物大潮! 剩余 ${remaining}秒`);
+        this.hud.message.setText(`警报: 失控单元涌入 | ${remaining} 秒`);
       }
     } else if (this.waveElapsed >= 35_000) {
       this.waveActive = true;
@@ -1900,12 +2018,12 @@ export class GameScene extends Phaser.Scene {
     const s = sec % 60;
     const timeStr = `${min}:${s.toString().padStart(2, '0')}`;
 
-    this.hud.hp.setText(`生命: ${this.stats.hp}/${this.stats.maxHp}`);
-    this.hud.level.setText(`等级: ${this.level}`);
-    this.hud.xp.setText(`经验: ${this.xp}/${this.xpToNext}${this.doubleXp ? ' (双倍)' : ''}`);
-    this.hud.time.setText(`时间: ${timeStr}`);
-    this.hud.stats.setText(`击杀: ${this.kills} | 金币: ${this.gold} | 射击: ${this.shots}`);
-    this.hud.gold.setText(`🪙 ${this.gold}`).setX(this.scale.width - 90);
+    this.hud.hp.setText(`生命维持: ${this.stats.hp}/${this.stats.maxHp}`);
+    this.hud.level.setText(`权限等级: ${this.level}`);
+    this.hud.xp.setText(`数据碎片: ${this.xp}/${this.xpToNext}${this.doubleXp ? '  x2' : ''}`);
+    this.hud.time.setText(`隔离倒计时: ${timeStr}`);
+    this.hud.stats.setText(`清除: ${this.kills} | 算力: ${this.gold} | 脉冲: ${this.shots}`);
+    this.hud.gold.setText(`算力 ${this.gold}`).setX(this.scale.width - 112);
 
     // Update boss HP bar
     if (this.bossActive) {
@@ -1921,9 +2039,9 @@ export class GameScene extends Phaser.Scene {
 
       if (bossMaxHp > 0) {
         const ratio = Math.max(0, bossHp / bossMaxHp);
-        const barW = 300 * ratio;
-        this.hud.bossHp.setText(`BOSS  HP: ${Math.ceil(bossHp)}/${bossMaxHp}`);
-        this.hud.bossBar.setSize(barW, 10);
+        const barW = 320 * ratio;
+        this.hud.bossHp.setText(`失控核心 HP: ${Math.ceil(bossHp)}/${bossMaxHp}`);
+        this.hud.bossBar.setSize(barW, 12);
       }
     }
   }
