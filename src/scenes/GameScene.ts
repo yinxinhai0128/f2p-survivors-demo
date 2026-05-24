@@ -33,14 +33,14 @@ interface EnemyConfig {
   tex: string;
 }
 
-const WORLD_WIDTH = 4200;
-const WORLD_HEIGHT = 3000;
+const WORLD_WIDTH = 3344;
+const WORLD_HEIGHT = 1882;
 const GAME_DURATION_MS = 180_000;
-const PLAYER_RADIUS = 18;
-const ENEMY_SIZE = 30;
-const BOSS_SIZE = 64;
-const XP_RADIUS = 3;
-const LOOT_RADIUS = 10;
+const PLAYER_RADIUS = 24;
+const ENEMY_SIZE = 60;
+const BOSS_SIZE = 85;
+const XP_RADIUS = 6;
+const LOOT_RADIUS = 20;
 const START_ATTACK_INTERVAL = 900;
 const MIN_ATTACK_INTERVAL = 200;
 const ATTACK_RANGE = 350;
@@ -57,7 +57,13 @@ const WEAPON_SKILLS: WeaponSkillId[] = ['drone', 'molotov', 'orbit', 'missile', 
 const SUPPORT_SKILLS: SupportSkillId[] = ['attackSpeed', 'range', 'damage', 'bulletCount', 'heal', 'moveSpeed'];
 
 export class GameScene extends Phaser.Scene {
+  private selectedCharacter = 'drone_assault';
   private player!: Phaser.Physics.Arcade.Image;
+  private playerShadow!: Phaser.GameObjects.Ellipse;
+  private playerAura!: Phaser.GameObjects.Ellipse;
+
+  private thrusterEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private dataFlowDots: Phaser.GameObjects.Arc[] = [];
   private enemies!: Phaser.Physics.Arcade.Group;
   private bullets!: Phaser.Physics.Arcade.Group;
   private xpOrbs!: Phaser.Physics.Arcade.Group;
@@ -100,6 +106,8 @@ export class GameScene extends Phaser.Scene {
   private bossPendingEvents: Phaser.Time.TimerEvent[] = [];
   private bossLastAttack: BossAttackId | null = null;
   private bossBullets!: Phaser.Physics.Arcade.Group;
+  private settingsMenuOpen = false;
+  private settingsMenuItems: Phaser.GameObjects.GameObject[] = [];
   // Skill evolution flags (level 5 quality change)
   private piercingBullets = false;
   private critChance = 0;
@@ -142,6 +150,10 @@ export class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
+  init(data: { character?: string }) {
+    if (data?.character) this.selectedCharacter = data.character;
+  }
+
   create() {
     this.resetRun();
     this.createTextures();
@@ -154,6 +166,19 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.gameOver || this.choosingSkill) {
       return;
+    }
+
+    // 星场视差滚动（仅随玩家实际移动偏移，玩家不动则背景不动）
+    const playerVX = this.player.body!.velocity.x;
+    const playerVY = this.player.body!.velocity.y;
+    if (this.textures.exists('starfield_deep')) {
+      this.children.list.forEach((child) => {
+        const spd = child.getData('scrollSpeed') as number | undefined;
+        if (spd !== undefined && child instanceof Phaser.GameObjects.TileSprite) {
+          child.tilePositionX += playerVX * delta * spd * 0.0004;
+          child.tilePositionY += playerVY * delta * spd * 0.0004;
+        }
+      });
     }
 
     this.elapsedMs += delta;
@@ -170,6 +195,28 @@ export class GameScene extends Phaser.Scene {
     this.auraElapsed += delta;
 
     this.movePlayer();
+    // 阴影跟随玩家
+    this.playerShadow.setPosition(this.player.x, this.player.y + 4);
+    this.playerAura.setPosition(this.player.x, this.player.y);
+
+
+    // 推进器粒子 + 移动倾斜
+    const speed = new Phaser.Math.Vector2(this.player.body!.velocity.x, this.player.body!.velocity.y).length();
+    if (speed > 30) {
+      const angle = Math.atan2(this.player.body!.velocity.y, this.player.body!.velocity.x) + Math.PI;
+      const ex = this.player.x + Math.cos(angle) * 44;
+      const ey = this.player.y + Math.sin(angle) * 44;
+      this.thrusterEmitter.emitting = true;
+      this.thrusterEmitter.setPosition(ex, ey);
+      this.thrusterEmitter.setParticleSpeed(20 + speed * 0.15, 50 + speed * 0.25);
+      // 移动方向倾斜
+      const targetRot = Phaser.Math.Angle.Between(0, 0, this.player.body!.velocity.x, this.player.body!.velocity.y);
+      this.player.rotation = Phaser.Math.Angle.RotateTo(this.player.rotation, targetRot, 0.08);
+    } else {
+      this.thrusterEmitter.emitting = false;
+      this.player.rotation = Phaser.Math.Angle.RotateTo(this.player.rotation, 0, 0.04);
+    }
+
     this.spawnEnemiesWhenReady();
     this.updateBossSpawn();
     this.updateBossAttack();
@@ -182,6 +229,7 @@ export class GameScene extends Phaser.Scene {
     this.updateFireTrail(delta);
     this.updateHpRegen(delta);
     this.updateAuraSlow();
+    this.updateDataFlow(delta);
     this.updateWave(delta);
     this.updateXpCollection();
     this.updateLootCollection();
@@ -260,191 +308,193 @@ export class GameScene extends Phaser.Scene {
     const g = this.add.graphics();
 
     // Player: lab operator drone with a cyan visor and containment shield.
-    g.fillStyle(0x071a25);
-    g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
-    g.lineStyle(3, 0x67e8f9, 0.9);
-    g.strokeCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 1);
-    g.fillStyle(0x0f2d3a);
-    g.fillRoundedRect(8, 10, 20, 18, 5);
-    g.lineStyle(2, 0x93f4ff, 0.85);
-    g.strokeRoundedRect(8, 10, 20, 18, 5);
-    g.fillStyle(0x8df7ff);
-    g.fillRoundedRect(12, 14, 12, 5, 2);
-    g.fillStyle(0xffffff, 0.85);
-    g.fillCircle(14, 15, 2);
-    g.lineStyle(2, 0x1ee7b7, 0.75);
-    g.beginPath();
-    g.arc(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 5, -0.2, 1.25);
-    g.strokePath();
-    g.generateTexture('player', PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
-    g.clear();
+    if (!this.textures.exists('player')) {
+      g.fillStyle(0x071a25);
+      g.fillCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS);
+      g.lineStyle(3, 0x67e8f9, 0.9);
+      g.strokeCircle(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 1);
+      g.fillStyle(0x0f2d3a);
+      g.fillRoundedRect(8, 10, 20, 18, 5);
+      g.lineStyle(2, 0x93f4ff, 0.85);
+      g.strokeRoundedRect(8, 10, 20, 18, 5);
+      g.fillStyle(0x8df7ff);
+      g.fillRoundedRect(12, 14, 12, 5, 2);
+      g.fillStyle(0xffffff, 0.85);
+      g.fillCircle(14, 15, 2);
+      g.lineStyle(2, 0x1ee7b7, 0.75);
+      g.beginPath();
+      g.arc(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_RADIUS - 5, -0.2, 1.25);
+      g.strokePath();
+      g.generateTexture('player', PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
+      g.clear();
+    }
 
     // Normal enemy: corrupted test bot.
-    g.fillStyle(0x30080d);
-    g.fillRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
-    g.fillStyle(0xe11d48);
-    g.fillRoundedRect(5, 6, ENEMY_SIZE - 10, ENEMY_SIZE - 12, 3);
-    g.lineStyle(2, 0xff6b8a, 0.9);
-    g.strokeRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
-    g.lineStyle(1, 0xff9fb3, 0.55);
-    g.lineBetween(8, 2, 8, 0);
-    g.lineBetween(22, 2, 22, 0);
-    g.fillStyle(0xffffff);
-    g.fillCircle(10, 14, 3);
-    g.fillCircle(20, 14, 3);
-    g.fillStyle(0x111827);
-    g.fillCircle(10, 14, 1.5);
-    g.fillCircle(20, 14, 1.5);
-    g.fillStyle(0xffd166);
-    g.fillRect(8, 22, 14, 2);
-    g.generateTexture('enemy', ENEMY_SIZE, ENEMY_SIZE);
-    g.clear();
+    if (!this.textures.exists('enemy')) {
+      g.fillStyle(0x30080d);
+      g.fillRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
+      g.fillStyle(0xe11d48);
+      g.fillRoundedRect(5, 6, ENEMY_SIZE - 10, ENEMY_SIZE - 12, 3);
+      g.lineStyle(2, 0xff6b8a, 0.9);
+      g.strokeRoundedRect(2, 2, ENEMY_SIZE - 4, ENEMY_SIZE - 4, 3);
+      g.lineStyle(1, 0xff9fb3, 0.55);
+      g.lineBetween(8, 2, 8, 0);
+      g.lineBetween(22, 2, 22, 0);
+      g.fillStyle(0xffffff);
+      g.fillCircle(10, 14, 3);
+      g.fillCircle(20, 14, 3);
+      g.fillStyle(0x111827);
+      g.fillCircle(10, 14, 1.5);
+      g.fillCircle(20, 14, 1.5);
+      g.fillStyle(0xffd166);
+      g.fillRect(8, 22, 14, 2);
+      g.generateTexture('enemy', ENEMY_SIZE, ENEMY_SIZE);
+      g.clear();
+    }
 
     // Fast enemy: rogue data shard.
-    g.fillStyle(0xff8a00);
-    g.fillTriangle(15, 2, 2, 28, 28, 28);
-    g.fillStyle(0xffc46b);
-    g.fillTriangle(15, 7, 8, 25, 22, 25);
-    g.lineStyle(2, 0xfff0c2, 0.9);
-    g.strokeTriangle(15, 2, 2, 28, 28, 28);
-    g.lineStyle(1, 0x451a03, 0.9);
-    g.lineBetween(15, 8, 15, 23);
-    g.lineBetween(10, 21, 20, 21);
-    g.generateTexture('enemy_fast', ENEMY_SIZE, ENEMY_SIZE);
-    g.clear();
+    if (!this.textures.exists('enemy_fast')) {
+      g.fillStyle(0xff8a00);
+      g.fillTriangle(15, 2, 2, 28, 28, 28);
+      g.fillStyle(0xffc46b);
+      g.fillTriangle(15, 7, 8, 25, 22, 25);
+      g.lineStyle(2, 0xfff0c2, 0.9);
+      g.strokeTriangle(15, 2, 2, 28, 28, 28);
+      g.lineStyle(1, 0x451a03, 0.9);
+      g.lineBetween(15, 8, 15, 23);
+      g.lineBetween(10, 21, 20, 21);
+      g.generateTexture('enemy_fast', ENEMY_SIZE, ENEMY_SIZE);
+      g.clear();
+    }
 
     // Tank enemy: armored firewall block.
-    g.fillStyle(0x141017);
-    g.fillRoundedRect(0, 0, 34, 34, 4);
-    g.fillStyle(0x7f1d1d);
-    g.fillRoundedRect(4, 4, 26, 26, 3);
-    g.lineStyle(3, 0xfbbf24, 0.9);
-    g.strokeRoundedRect(1, 1, 32, 32, 4);
-    g.fillStyle(0xfff7ad);
-    g.fillRect(8, 10, 18, 4);
-    g.fillStyle(0x111827);
-    g.fillRect(10, 20, 14, 4);
-    g.lineStyle(1, 0xfde68a, 0.55);
-    g.lineBetween(6, 28, 28, 6);
-    g.generateTexture('enemy_tank', 34, 34);
-    g.clear();
+    if (!this.textures.exists('enemy_tank')) {
+      g.fillStyle(0x141017);
+      g.fillRoundedRect(0, 0, 34, 34, 4);
+      g.fillStyle(0x7f1d1d);
+      g.fillRoundedRect(4, 4, 26, 26, 3);
+      g.lineStyle(3, 0xfbbf24, 0.9);
+      g.strokeRoundedRect(1, 1, 32, 32, 4);
+      g.fillStyle(0xfff7ad);
+      g.fillRect(8, 10, 18, 4);
+      g.fillStyle(0x111827);
+      g.fillRect(10, 20, 14, 4);
+      g.lineStyle(1, 0xfde68a, 0.55);
+      g.lineBetween(6, 28, 28, 6);
+      g.generateTexture('enemy_tank', 34, 34);
+      g.clear();
+    }
 
     // Elite enemy: unstable neural cluster.
-    g.fillStyle(0x24113f);
-    g.fillCircle(16, 16, 16);
-    g.fillStyle(0x8b5cf6);
-    g.fillCircle(16, 16, 12);
-    g.lineStyle(2, 0xd8b4fe, 0.95);
-    g.strokeCircle(16, 16, 15);
-    g.lineStyle(1.5, 0xffffff, 0.75);
-    g.lineBetween(9, 12, 16, 8);
-    g.lineBetween(16, 8, 23, 12);
-    g.lineBetween(9, 20, 16, 24);
-    g.lineBetween(16, 24, 23, 20);
-    g.fillStyle(0xffffff);
-    g.fillCircle(16, 16, 4);
-    g.fillStyle(0x2e1065);
-    g.fillCircle(16, 16, 2);
-    g.generateTexture('enemy_elite', 32, 32);
-    g.clear();
+    if (!this.textures.exists('enemy_elite')) {
+      g.fillStyle(0x24113f);
+      g.fillCircle(16, 16, 16);
+      g.fillStyle(0x8b5cf6);
+      g.fillCircle(16, 16, 12);
+      g.lineStyle(2, 0xd8b4fe, 0.95);
+      g.strokeCircle(16, 16, 15);
+      g.lineStyle(1.5, 0xffffff, 0.75);
+      g.lineBetween(9, 12, 16, 8);
+      g.lineBetween(16, 8, 23, 12);
+      g.lineBetween(9, 20, 16, 24);
+      g.lineBetween(16, 24, 23, 20);
+      g.fillStyle(0xffffff);
+      g.fillCircle(16, 16, 4);
+      g.fillStyle(0x2e1065);
+      g.fillCircle(16, 16, 2);
+      g.generateTexture('enemy_elite', 32, 32);
+      g.clear();
+    }
 
     // Boss 1: Demon (red, horned, spiky)
-    const bR = BOSS_SIZE / 2;
-    g.fillStyle(0x8b0000);
-    g.fillCircle(bR, bR, bR - 2);
-    g.fillStyle(0xd50000);
-    g.fillCircle(bR, bR + 2, bR - 8);
-    // Horns
-    g.fillStyle(0x3e2723);
-    g.fillTriangle(bR - 12, bR - 10, bR - 18, bR - 28, bR - 4, bR - 14);
-    g.fillTriangle(bR + 12, bR - 10, bR + 18, bR - 28, bR + 4, bR - 14);
-    // Spikes around body
-    g.fillStyle(0xff1744);
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
-      const sx = bR + Math.cos(a) * (bR - 6);
-      const sy = bR + Math.sin(a) * (bR - 6);
-      g.fillTriangle(sx, sy, sx + Math.cos(a - 0.3) * 14, sy + Math.sin(a - 0.3) * 14, sx + Math.cos(a + 0.3) * 14, sy + Math.sin(a + 0.3) * 14);
+    if (!this.textures.exists('boss_demon')) {
+      const bR1 = BOSS_SIZE / 2;
+      g.fillStyle(0x8b0000);
+      g.fillCircle(bR1, bR1, bR1 - 2);
+      g.fillStyle(0xd50000);
+      g.fillCircle(bR1, bR1 + 2, bR1 - 8);
+      g.fillStyle(0x3e2723);
+      g.fillTriangle(bR1 - 12, bR1 - 10, bR1 - 18, bR1 - 28, bR1 - 4, bR1 - 14);
+      g.fillTriangle(bR1 + 12, bR1 - 10, bR1 + 18, bR1 - 28, bR1 + 4, bR1 - 14);
+      g.fillStyle(0xff1744);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+        const sx = bR1 + Math.cos(a) * (bR1 - 6);
+        const sy = bR1 + Math.sin(a) * (bR1 - 6);
+        g.fillTriangle(sx, sy, sx + Math.cos(a - 0.3) * 14, sy + Math.sin(a - 0.3) * 14, sx + Math.cos(a + 0.3) * 14, sy + Math.sin(a + 0.3) * 14);
+      }
+      g.fillStyle(0xffeb3b);
+      g.fillCircle(bR1 - 8, bR1 - 2, 6);
+      g.fillCircle(bR1 + 8, bR1 - 2, 6);
+      g.fillStyle(0x000000);
+      g.fillCircle(bR1 - 8, bR1 - 2, 3);
+      g.fillCircle(bR1 + 8, bR1 - 2, 3);
+      g.fillStyle(0x000000);
+      g.fillTriangle(bR1 - 6, bR1 + 10, bR1 + 6, bR1 + 10, bR1, bR1 + 20);
+      g.lineStyle(2, 0xff6f00, 0.8);
+      g.strokeCircle(bR1, bR1, bR1 - 2);
+      g.generateTexture('boss_demon', BOSS_SIZE, BOSS_SIZE);
+      g.clear();
     }
-    // Eyes
-    g.fillStyle(0xffeb3b);
-    g.fillCircle(bR - 8, bR - 2, 6);
-    g.fillCircle(bR + 8, bR - 2, 6);
-    g.fillStyle(0x000000);
-    g.fillCircle(bR - 8, bR - 2, 3);
-    g.fillCircle(bR + 8, bR - 2, 3);
-    // Mouth
-    g.fillStyle(0x000000);
-    g.fillTriangle(bR - 6, bR + 10, bR + 6, bR + 10, bR, bR + 20);
-    g.lineStyle(2, 0xff6f00, 0.8);
-    g.strokeCircle(bR, bR, bR - 2);
-    g.generateTexture('boss_demon', BOSS_SIZE, BOSS_SIZE);
-    g.clear();
 
     // Boss 2: Giant Eye (purple, tentacles)
-    g.fillStyle(0x311b92);
-    g.fillCircle(bR, bR, bR - 2);
-    g.fillStyle(0x4a148c);
-    g.fillCircle(bR, bR, bR - 8);
-    // Tentacles (6 small arcs around)
-    g.fillStyle(0x7c4dff);
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const tx = bR + Math.cos(a) * (bR - 8);
-      const ty = bR + Math.sin(a) * (bR - 8);
-      g.fillCircle(tx, ty, 6);
+    if (!this.textures.exists('boss_eye')) {
+      const bR2 = BOSS_SIZE / 2;
+      g.fillStyle(0x311b92);
+      g.fillCircle(bR2, bR2, bR2 - 2);
+      g.fillStyle(0x4a148c);
+      g.fillCircle(bR2, bR2, bR2 - 8);
+      g.fillStyle(0x7c4dff);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const tx = bR2 + Math.cos(a) * (bR2 - 8);
+        const ty = bR2 + Math.sin(a) * (bR2 - 8);
+        g.fillCircle(tx, ty, 6);
+      }
+      g.fillStyle(0xffffff);
+      g.fillCircle(bR2, bR2, 17);
+      g.fillStyle(0x7c4dff);
+      g.fillCircle(bR2, bR2, 11);
+      g.fillStyle(0x000000);
+      g.fillCircle(bR2, bR2, 6);
+      g.fillStyle(0xffffff);
+      g.fillCircle(bR2 + 3, bR2 - 3, 3);
+      g.lineStyle(1.5, 0xb388ff, 0.6);
+      g.strokeCircle(bR2, bR2, bR2 - 1);
+      g.generateTexture('boss_eye', BOSS_SIZE, BOSS_SIZE);
+      g.clear();
     }
-    // Eye white
-    g.fillStyle(0xffffff);
-    g.fillCircle(bR, bR, 17);
-    // Iris
-    g.fillStyle(0x7c4dff);
-    g.fillCircle(bR, bR, 11);
-    // Pupil
-    g.fillStyle(0x000000);
-    g.fillCircle(bR, bR, 6);
-    // Pupil highlight
-    g.fillStyle(0xffffff);
-    g.fillCircle(bR + 3, bR - 3, 3);
-    // Veins
-    g.lineStyle(1.5, 0xb388ff, 0.6);
-    g.strokeCircle(bR, bR, bR - 1);
-    g.generateTexture('boss_eye', BOSS_SIZE, BOSS_SIZE);
-    g.clear();
 
     // Boss 3: Reaper (dark, skull-like, bone white)
-    g.fillStyle(0x1a1a2e);
-    g.fillCircle(bR, bR, bR - 2);
-    g.fillStyle(0x263238);
-    g.fillCircle(bR, bR + 1, bR - 6);
-    // Skull shape
-    g.fillStyle(0xcfd8dc);
-    g.fillCircle(bR, bR - 2, 14);
-    g.fillRect(bR - 12, bR - 2, 24, 14);
-    // Eye sockets
-    g.fillStyle(0x000000);
-    g.fillCircle(bR - 6, bR - 2, 5);
-    g.fillCircle(bR + 6, bR - 2, 5);
-    // Glowing dots in eyes
-    g.fillStyle(0x00e5ff);
-    g.fillCircle(bR - 6, bR - 2, 2);
-    g.fillCircle(bR + 6, bR - 2, 2);
-    // Nose hole
-    g.fillStyle(0x000000);
-    g.fillTriangle(bR - 2, bR + 4, bR + 2, bR + 4, bR, bR + 8);
-    // Teeth
-    g.fillStyle(0xffffff);
-    for (let j = 0; j < 5; j++) {
-      g.fillRect(bR - 7 + j * 3, bR + 12, 2, 4);
+    if (!this.textures.exists('boss_reaper')) {
+      const bR3 = BOSS_SIZE / 2;
+      g.fillStyle(0x1a1a2e);
+      g.fillCircle(bR3, bR3, bR3 - 2);
+      g.fillStyle(0x263238);
+      g.fillCircle(bR3, bR3 + 1, bR3 - 6);
+      g.fillStyle(0xcfd8dc);
+      g.fillCircle(bR3, bR3 - 2, 14);
+      g.fillRect(bR3 - 12, bR3 - 2, 24, 14);
+      g.fillStyle(0x000000);
+      g.fillCircle(bR3 - 6, bR3 - 2, 5);
+      g.fillCircle(bR3 + 6, bR3 - 2, 5);
+      g.fillStyle(0x00e5ff);
+      g.fillCircle(bR3 - 6, bR3 - 2, 2);
+      g.fillCircle(bR3 + 6, bR3 - 2, 2);
+      g.fillStyle(0x000000);
+      g.fillTriangle(bR3 - 2, bR3 + 4, bR3 + 2, bR3 + 4, bR3, bR3 + 8);
+      g.fillStyle(0xffffff);
+      for (let j = 0; j < 5; j++) {
+        g.fillRect(bR3 - 7 + j * 3, bR3 + 12, 2, 4);
+      }
+      g.fillStyle(0x90a4ae);
+      g.fillRect(bR3 - 22, bR3 - 6, 6, 12);
+      g.fillRect(bR3 + 16, bR3 - 6, 6, 12);
+      g.lineStyle(2, 0x546e7a, 0.7);
+      g.strokeCircle(bR3, bR3, bR3 - 2);
+      g.generateTexture('boss_reaper', BOSS_SIZE, BOSS_SIZE);
+      g.clear();
     }
-    // Bone details on sides
-    g.fillStyle(0x90a4ae);
-    g.fillRect(bR - 22, bR - 6, 6, 12);
-    g.fillRect(bR + 16, bR - 6, 6, 12);
-    g.lineStyle(2, 0x546e7a, 0.7);
-    g.strokeCircle(bR, bR, bR - 2);
-    g.generateTexture('boss_reaper', BOSS_SIZE, BOSS_SIZE);
-    g.clear();
 
     // Bullet: cyan data pulse.
     g.fillStyle(0x22d3ee, 0.35);
@@ -457,68 +507,78 @@ export class GameScene extends Phaser.Scene {
     g.clear();
 
     // Drone: small physical craft that orbits the player and fires independently.
-    g.fillStyle(0x0b1722);
-    g.fillRoundedRect(1, 5, 22, 14, 5);
-    g.lineStyle(2, 0x67e8f9, 0.9);
-    g.strokeRoundedRect(1, 5, 22, 14, 5);
-    g.fillStyle(0x8df7ff);
-    g.fillRoundedRect(7, 9, 10, 5, 2);
-    g.fillStyle(0x14b8a6);
-    g.fillCircle(2, 12, 3);
-    g.fillCircle(22, 12, 3);
-    g.generateTexture('weapon_drone', 24, 24);
-    g.clear();
+    if (!this.textures.exists('weapon_drone')) {
+      g.fillStyle(0x0b1722);
+      g.fillRoundedRect(1, 5, 22, 14, 5);
+      g.lineStyle(2, 0x67e8f9, 0.9);
+      g.strokeRoundedRect(1, 5, 22, 14, 5);
+      g.fillStyle(0x8df7ff);
+      g.fillRoundedRect(7, 9, 10, 5, 2);
+      g.fillStyle(0x14b8a6);
+      g.fillCircle(2, 12, 3);
+      g.fillCircle(22, 12, 3);
+      g.generateTexture('weapon_drone', 24, 24);
+      g.clear();
+    }
 
     // Blade: rotating close-range weapon with a clear cutting edge.
-    g.fillStyle(0xe0faff);
-    g.fillTriangle(18, 2, 5, 14, 18, 26);
-    g.fillStyle(0x38bdf8);
-    g.fillTriangle(15, 8, 8, 14, 15, 20);
-    g.lineStyle(2, 0x0ea5e9, 0.9);
-    g.strokeTriangle(18, 2, 5, 14, 18, 26);
-    g.generateTexture('weapon_blade', 28, 28);
-    g.clear();
+    if (!this.textures.exists('weapon_blade')) {
+      g.fillStyle(0xe0faff);
+      g.fillTriangle(18, 2, 5, 14, 18, 26);
+      g.fillStyle(0x38bdf8);
+      g.fillTriangle(15, 8, 8, 14, 15, 20);
+      g.lineStyle(2, 0x0ea5e9, 0.9);
+      g.strokeTriangle(18, 2, 5, 14, 18, 26);
+      g.generateTexture('weapon_blade', 28, 28);
+      g.clear();
+    }
 
     // Molotov: arcing bottle projectile before the fire zone blooms.
-    g.fillStyle(0x14532d);
-    g.fillRoundedRect(5, 8, 10, 16, 3);
-    g.fillStyle(0xf97316);
-    g.fillRect(6, 15, 8, 7);
-    g.lineStyle(1.5, 0xbbf7d0, 0.8);
-    g.strokeRoundedRect(5, 8, 10, 16, 3);
-    g.fillStyle(0xfacc15);
-    g.fillTriangle(7, 7, 13, 7, 10, 0);
-    g.generateTexture('weapon_molotov', 20, 26);
-    g.clear();
+    if (!this.textures.exists('weapon_molotov')) {
+      g.fillStyle(0x14532d);
+      g.fillRoundedRect(5, 8, 10, 16, 3);
+      g.fillStyle(0xf97316);
+      g.fillRect(6, 15, 8, 7);
+      g.lineStyle(1.5, 0xbbf7d0, 0.8);
+      g.strokeRoundedRect(5, 8, 10, 16, 3);
+      g.fillStyle(0xfacc15);
+      g.fillTriangle(7, 7, 13, 7, 10, 0);
+      g.generateTexture('weapon_molotov', 20, 26);
+      g.clear();
+    }
 
     // Missile: directional projectile with thrust flame.
-    g.fillStyle(0xe5e7eb);
-    g.fillTriangle(22, 8, 6, 2, 6, 14);
-    g.fillStyle(0x94a3b8);
-    g.fillRect(5, 3, 10, 10);
-    g.fillStyle(0xf97316);
-    g.fillTriangle(4, 8, 0, 4, 0, 12);
-    g.lineStyle(1.5, 0x38bdf8, 0.75);
-    g.strokeTriangle(22, 8, 6, 2, 6, 14);
-    g.generateTexture('weapon_missile', 24, 16);
-    g.clear();
+    if (!this.textures.exists('weapon_missile')) {
+      g.fillStyle(0xe5e7eb);
+      g.fillTriangle(22, 8, 6, 2, 6, 14);
+      g.fillStyle(0x94a3b8);
+      g.fillRect(5, 3, 10, 10);
+      g.fillStyle(0xf97316);
+      g.fillTriangle(4, 8, 0, 4, 0, 12);
+      g.lineStyle(1.5, 0x38bdf8, 0.75);
+      g.strokeTriangle(22, 8, 6, 2, 6, 14);
+      g.generateTexture('weapon_missile', 24, 16);
+      g.clear();
+    }
 
     // Orbital laser carrier: visible emitter before the beam fires.
-    g.fillStyle(0x08111f);
-    g.fillCircle(18, 18, 15);
-    g.lineStyle(2, 0x67e8f9, 0.9);
-    g.strokeCircle(18, 18, 14);
-    g.fillStyle(0x22d3ee);
-    g.fillCircle(18, 18, 5);
-    g.fillStyle(0xe0faff);
-    g.fillCircle(16, 16, 2);
-    g.lineStyle(3, 0x94a3b8, 0.85);
-    g.lineBetween(3, 18, 0, 18);
-    g.lineBetween(33, 18, 36, 18);
-    g.lineStyle(2, 0xfacc15, 0.85);
-    g.strokeCircle(18, 18, 9);
-    g.generateTexture('weapon_laser_sat', 36, 36);
-    g.clear();
+    if (!this.textures.exists('weapon_laser_sat')) {
+      g.fillStyle(0x08111f);
+      g.fillCircle(18, 18, 15);
+      g.lineStyle(2, 0x67e8f9, 0.9);
+      g.strokeCircle(18, 18, 14);
+      g.fillStyle(0x22d3ee);
+      g.fillCircle(18, 18, 5);
+      g.fillStyle(0xe0faff);
+      g.fillCircle(16, 16, 2);
+      g.lineStyle(3, 0x94a3b8, 0.85);
+      g.lineBetween(3, 18, 0, 18);
+      g.lineBetween(33, 18, 36, 18);
+      g.lineStyle(2, 0xfacc15, 0.85);
+      g.strokeCircle(18, 18, 9);
+      g.generateTexture('weapon_laser_sat', 36, 36);
+      g.clear();
+    }
 
     // XP orb: recovered data fragment.
     g.fillStyle(0x34d399);
@@ -531,89 +591,378 @@ export class GameScene extends Phaser.Scene {
     g.clear();
 
     // Magnet: U-shaped horseshoe magnet (red & blue)
-    const mw = 20, mh = 22;
-    // Red pole (left/N pole)
-    g.fillStyle(0xef5350);
-    g.fillRect(3, 0, 7, 16);
-    g.fillStyle(0xff8a80);
-    g.fillRect(3, 0, 2, 16);
-    // Blue pole (right/S pole)
-    g.fillStyle(0x1565c0);
-    g.fillRect(11, 0, 7, 16);
-    g.fillStyle(0x42a5f5);
-    g.fillRect(16, 0, 2, 16);
-    // Bottom connecting bar
-    g.fillStyle(0x9e9e9e);
-    g.fillRect(3, 16, 14, 5);
-    g.fillStyle(0xbdbdbd);
-    g.fillRect(5, 16, 10, 2);
-    // Rounded tips
-    g.fillStyle(0xef5350);
-    g.fillRect(2, -1, 9, 3);
-    g.fillStyle(0x1565c0);
-    g.fillRect(10, -1, 9, 3);
-    g.generateTexture('loot_magnet', mw, mh);
-    g.clear();
+    if (!this.textures.exists('loot_magnet')) {
+      const mw = 20, mh = 22;
+      g.fillStyle(0xef5350);
+      g.fillRect(3, 0, 7, 16);
+      g.fillStyle(0xff8a80);
+      g.fillRect(3, 0, 2, 16);
+      g.fillStyle(0x1565c0);
+      g.fillRect(11, 0, 7, 16);
+      g.fillStyle(0x42a5f5);
+      g.fillRect(16, 0, 2, 16);
+      g.fillStyle(0x9e9e9e);
+      g.fillRect(3, 16, 14, 5);
+      g.fillStyle(0xbdbdbd);
+      g.fillRect(5, 16, 10, 2);
+      g.fillStyle(0xef5350);
+      g.fillRect(2, -1, 9, 3);
+      g.fillStyle(0x1565c0);
+      g.fillRect(10, -1, 9, 3);
+      g.generateTexture('loot_magnet', mw, mh);
+      g.clear();
+    }
 
     // Health: glass bottle with red blood (~2/3 full)
-    const bw = 16, bh = 24;
-    // glass body outline
-    g.lineStyle(1.5, 0xbcddf5, 0.85);
-    g.strokeRect(3, 8, 10, 12);                          // bottle body
-    g.strokeRect(5, 3, 6, 6);                             // neck
-    // red blood liquid (bottom 2/3 of body)
-    g.fillStyle(0xcc0000, 0.85);
-    g.fillRect(4, 14, 8, 6);                              // liquid in body
-    g.fillStyle(0xff1a1a, 0.7);
-    g.fillRect(4, 13, 8, 3);                              // liquid surface highlight
-    // glass shine
-    g.lineStyle(1, 0xffffff, 0.45);
-    g.strokeRect(5, 9, 1, 8);                             // left reflection line
-    // cork
-    g.fillStyle(0x8d6e63, 0.95);
-    g.fillRect(5, 0, 6, 4);
-    g.lineStyle(1, 0x6d4c41, 0.9);
-    g.strokeRect(5, 0, 6, 4);
-    g.generateTexture('loot_health', bw, bh);
-    g.clear();
+    if (!this.textures.exists('loot_health')) {
+      const bw = 16, bh = 24;
+      g.lineStyle(1.5, 0xbcddf5, 0.85);
+      g.strokeRect(3, 8, 10, 12);
+      g.strokeRect(5, 3, 6, 6);
+      g.fillStyle(0xcc0000, 0.85);
+      g.fillRect(4, 14, 8, 6);
+      g.fillStyle(0xff1a1a, 0.7);
+      g.fillRect(4, 13, 8, 3);
+      g.lineStyle(1, 0xffffff, 0.45);
+      g.strokeRect(5, 9, 1, 8);
+      g.fillStyle(0x8d6e63, 0.95);
+      g.fillRect(5, 0, 6, 4);
+      g.lineStyle(1, 0x6d4c41, 0.9);
+      g.strokeRect(5, 0, 6, 4);
+      g.generateTexture('loot_health', bw, bh);
+      g.clear();
+    }
 
     // Gold/currency: compute credit chip.
-    const gr = 10;
-    g.fillStyle(0xfacc15);
-    g.fillRoundedRect(1, 1, 18, 18, 3);
-    g.fillStyle(0x111827);
-    g.fillRoundedRect(5, 5, 10, 10, 2);
-    g.lineStyle(1.5, 0xfff7ad, 0.9);
-    g.strokeRoundedRect(1, 1, 18, 18, 3);
-    g.lineStyle(1, 0xfff7ad, 0.65);
-    g.lineBetween(5, 2, 5, 0);
-    g.lineBetween(10, 2, 10, 0);
-    g.lineBetween(15, 2, 15, 0);
-    g.lineBetween(5, 20, 5, 18);
-    g.lineBetween(10, 20, 10, 18);
-    g.lineBetween(15, 20, 15, 18);
-    g.generateTexture('loot_gold', gr * 2, gr * 2);
-    g.clear();
+    if (!this.textures.exists('loot_gold')) {
+      const gr = 10;
+      g.fillStyle(0xfacc15);
+      g.fillRoundedRect(1, 1, 18, 18, 3);
+      g.fillStyle(0x111827);
+      g.fillRoundedRect(5, 5, 10, 10, 2);
+      g.lineStyle(1.5, 0xfff7ad, 0.9);
+      g.strokeRoundedRect(1, 1, 18, 18, 3);
+      g.lineStyle(1, 0xfff7ad, 0.65);
+      g.lineBetween(5, 2, 5, 0);
+      g.lineBetween(10, 2, 10, 0);
+      g.lineBetween(15, 2, 15, 0);
+      g.lineBetween(5, 20, 5, 18);
+      g.lineBetween(10, 20, 10, 18);
+      g.lineBetween(15, 20, 15, 18);
+      g.generateTexture('loot_gold', gr * 2, gr * 2);
+      g.clear();
+    }
 
     g.destroy();
+  }
+
+  /* ========== FLOOR TEXTURE GENERATOR ========== */
+
+  private generateFloorTexture() {
+    if (this.textures.exists('floor_tile')) return;
+    const S = 800; // tile size
+    const g = this.add.graphics();
+
+    // — Layer 1: 底色 —
+    g.fillStyle(0x131e2b);
+    g.fillRect(0, 0, S, S);
+
+    // — Layer 2: 200px 主面板 —
+    const panelColors = [0x162231, 0x192838, 0x111c28, 0x152030, 0x182736, 0x14212e];
+    for (let px = 0; px < S; px += 200) {
+      for (let py = 0; py < S; py += 200) {
+        const ci = ((px + py) / 200) % panelColors.length;
+        g.fillStyle(panelColors[ci], 0.9);
+        g.fillRect(px + 1, py + 1, 198, 198);
+        // 主面板边框
+        g.lineStyle(1.5, 0x1e3448, 0.45);
+        g.strokeRect(px, py, 200, 200);
+      }
+    }
+
+    // — Layer 3: 100px 子面板分割线 —
+    g.lineStyle(0.8, 0x1a2d3f, 0.3);
+    for (let x = 0; x <= S; x += 100) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, S); g.strokePath();
+    }
+    for (let y = 0; y <= S; y += 100) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(S, y); g.strokePath();
+    }
+
+    // — Layer 4: 面板角螺栓 —
+    for (let px = 0; px <= S; px += 200) {
+      for (let py = 0; py <= S; py += 200) {
+        // 十字交叉处的4个螺栓
+        const offsets = [[-14,-14],[14,-14],[-14,14],[14,14]];
+        offsets.forEach(([ox, oy]) => {
+          const bx = Phaser.Math.Clamp(px + ox, 6, S - 6);
+          const by = Phaser.Math.Clamp(py + oy, 6, S - 6);
+          g.fillStyle(0x253b4d, 0.28);
+          g.fillCircle(bx, by, 3);
+          g.fillStyle(0x1a2a38, 0.4);
+          g.fillCircle(bx, by, 1.5);
+        });
+      }
+    }
+
+    // — Layer 5: 电路纹路 —
+    g.lineStyle(1, 0x1ee7b7, 0.06);
+    const circuitSeed = [7, 23, 41, 59, 73, 89, 103, 127, 151, 179, 197, 211];
+    circuitSeed.forEach((seed) => {
+      const sx = (seed * 37) % S;
+      const sy = (seed * 53) % S;
+      const len = 40 + (seed % 80);
+      const horizontal = seed % 3 === 0;
+      if (horizontal) {
+        g.beginPath(); g.moveTo(sx, sy); g.lineTo(Math.min(sx + len, S - 4), sy); g.strokePath();
+        // 小分支
+        if (seed % 5 === 0) {
+          g.beginPath(); g.moveTo(sx + len * 0.5, sy); g.lineTo(sx + len * 0.5, Math.min(sy + 24, S - 4)); g.strokePath();
+        }
+      } else {
+        g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx, Math.min(sy + len, S - 4)); g.strokePath();
+        if (seed % 5 === 0) {
+          g.beginPath(); g.moveTo(sx, sy + len * 0.5); g.lineTo(Math.min(sx + 24, S - 4), sy + len * 0.5); g.strokePath();
+        }
+      }
+      // 端点小圆
+      g.fillStyle(0x1ee7b7, 0.12);
+      g.fillCircle(sx, sy, 2);
+    });
+
+    // — Layer 6: 数据主干线 —
+    const dataPaths = [[80,80,720,80],[80,400,720,400],[80,200,720,680],[200,720,600,80],[400,40,400,760]];
+    dataPaths.forEach(([x1,y1,x2,y2]) => {
+      g.lineStyle(1.2, 0x22d3ee, 0.05);
+      g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.strokePath();
+      // 伴随虚线
+      g.lineStyle(0.6, 0x67e8f9, 0.04);
+      g.beginPath(); g.moveTo(x1 + 6, y1 - 4); g.lineTo(x2 + 6, y2 - 4); g.strokePath();
+    });
+
+    // — Layer 7: 磨损痕迹 —
+    for (let i = 0; i < 8; i++) {
+      const wx = 40 + ((i * 137 + 61) % (S - 80));
+      const wy = 40 + ((i * 193 + 37) % (S - 80));
+      const wr = 12 + (i % 3) * 10;
+      g.fillStyle(0x0a1118, 0.12 + (i % 3) * 0.04);
+      g.fillEllipse(wx, wy, wr, wr * 0.6);
+      if (i % 2 === 0) {
+        // 划痕
+        g.lineStyle(0.6, 0x0d1520, 0.2);
+        g.beginPath();
+        g.moveTo(wx - wr, wy - 2); g.lineTo(wx + wr * 0.6, wy + 1);
+        g.strokePath();
+      }
+    }
+
+    // — Layer 8: 警示区标记（四角） —
+    const corners = [[40,40],[S-40,40],[40,S-40],[S-40,S-40]];
+    corners.forEach(([cx, cy]) => {
+      g.lineStyle(1, 0xf59e0b, 0.05);
+      // L形角标
+      g.beginPath(); g.moveTo(cx-16, cy-16); g.lineTo(cx-16, cy-4); g.lineTo(cx-4, cy-4); g.strokePath();
+      g.beginPath(); g.moveTo(cx+16, cy-16); g.lineTo(cx+16, cy-4); g.lineTo(cx+4, cy-4); g.strokePath();
+      g.beginPath(); g.moveTo(cx-16, cy+16); g.lineTo(cx-16, cy+4); g.lineTo(cx-4, cy+4); g.strokePath();
+      g.beginPath(); g.moveTo(cx+16, cy+16); g.lineTo(cx+16, cy+4); g.lineTo(cx+4, cy+4); g.strokePath();
+    });
+
+    g.generateTexture('floor_tile', S, S);
+    g.destroy();
+  }
+
+  /* ========== 宇宙星场纹理生成 ========== */
+
+  private generateStarfieldTexture() {
+    if (this.textures.exists('starfield_deep')) return;
+    const S = 1024;
+    const g = this.add.graphics();
+
+    // —— 深层星场（稀疏小星点） ——
+    g.fillStyle(0x050a14);
+    g.fillRect(0, 0, S, S);
+    const starColors = [0xffffff, 0xaaccff, 0x8899cc, 0xbbddff, 0x667799];
+    for (let i = 0; i < 400; i++) {
+      const sx = Phaser.Math.Between(0, S);
+      const sy = Phaser.Math.Between(0, S);
+      const sr = Phaser.Math.FloatBetween(0.3, 1.8);
+      const ci = Phaser.Math.Between(0, starColors.length - 1);
+      g.fillStyle(starColors[ci], Phaser.Math.FloatBetween(0.15, 0.7));
+      g.fillCircle(sx, sy, sr);
+      // 亮星加十字光芒
+      if (i % 40 === 0 && sr > 1.2) {
+        g.fillStyle(starColors[ci], 0.15);
+        g.fillRect(sx - sr * 3, sy - 0.3, sr * 6, 0.6);
+        g.fillRect(sx - 0.3, sy - sr * 3, 0.6, sr * 6);
+      }
+    }
+    g.generateTexture('starfield_deep', S, S);
+    g.clear();
+
+    // —— 浅层星场（稍大、稍密的星点+星云斑块） ——
+    g.fillStyle(0x060b18);
+    g.fillRect(0, 0, S, S);
+    for (let i = 0; i < 300; i++) {
+      const sx = Phaser.Math.Between(0, S);
+      const sy = Phaser.Math.Between(0, S);
+      const sr = Phaser.Math.FloatBetween(0.4, 2.2);
+      const ci = Phaser.Math.Between(0, starColors.length - 1);
+      g.fillStyle(starColors[ci], Phaser.Math.FloatBetween(0.2, 0.8));
+      g.fillCircle(sx, sy, sr);
+      if (i % 30 === 0 && sr > 1.4) {
+        g.fillStyle(starColors[ci], 0.2);
+        g.fillRect(sx - sr * 4, sy - 0.4, sr * 8, 0.8);
+        g.fillRect(sx - 0.4, sy - sr * 4, 0.8, sr * 8);
+      }
+    }
+    // 稀薄星云斑块
+    for (let i = 0; i < 5; i++) {
+      const nx = Phaser.Math.Between(100, S - 100);
+      const ny = Phaser.Math.Between(100, S - 100);
+      const nr = Phaser.Math.Between(60, 130);
+      g.fillStyle(0x1a2255, 0.04);
+      g.fillCircle(nx, ny, nr);
+      g.fillStyle(0x221144, 0.03);
+      g.fillCircle(nx + Phaser.Math.Between(-30, 30), ny + Phaser.Math.Between(-30, 30), nr * 0.7);
+    }
+    g.generateTexture('starfield_near', S, S);
+    g.destroy();
+  }
+
+  private createShootingStars() {
+    const w = WORLD_WIDTH;
+    const h = WORLD_HEIGHT;
+    this.time.addEvent({
+      delay: Phaser.Math.Between(3000, 7000),
+      loop: true,
+      callback: () => {
+        const sx = Phaser.Math.Between(w * 0.1, w * 0.9);
+        const sy = Phaser.Math.Between(h * 0.05, h * 0.3);
+        const ex = sx + Phaser.Math.Between(-200, 200);
+        const ey = sy + Phaser.Math.Between(300, 600);
+        const line = this.add.line(0, 0, sx, sy, ex, ey, 0xffffff, 0)
+          .setDepth(-28).setLineWidth(1.5);
+        this.tweens.add({
+          targets: line,
+          alpha: 0.6,
+          duration: 600,
+          yoyo: true,
+          ease: 'Quad.easeIn',
+          onComplete: () => {
+            this.tweens.add({
+              targets: line, alpha: 0, duration: 400,
+              onComplete: () => line.destroy()
+            });
+          }
+        });
+      }
+    });
+  }
+
+  private createTwinklingStars() {
+    const w = WORLD_WIDTH;
+    const h = WORLD_HEIGHT;
+    const colors = [0xaaccff, 0xffffff, 0x8899cc, 0xccddff];
+    for (let i = 0; i < 50; i++) {
+      const sx = Phaser.Math.Between(20, w - 20);
+      const sy = Phaser.Math.Between(20, h - 20);
+      const sr = Phaser.Math.FloatBetween(0.5, 2.5);
+      const dot = this.add.circle(sx, sy, sr,
+        colors[Phaser.Math.Between(0, colors.length - 1)],
+        Phaser.Math.FloatBetween(0.1, 0.5)
+      ).setDepth(-30);
+      this.tweens.add({
+        targets: dot,
+        alpha: 0.05,
+        scaleX: 0.3,
+        scaleY: 0.3,
+        duration: Phaser.Math.Between(1500, 4000),
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+        delay: Phaser.Math.Between(0, 3000)
+      });
+    }
   }
 
   /* ========== WORLD SETUP ========== */
 
   private createWorld() {
     this.physics.world.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    this.add
-      .rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 0x07111a, 1)
-      .setDepth(-35);
-    this.add
-      .grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 80, 80, 0x0b1721, 0.48, 0x173242, 0.28)
-      .setDepth(-30);
-    this.createLabDecor();
 
-    this.player = this.physics.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 'player');
+    // 纯宇宙星空背景
+    this.generateStarfieldTexture();
+    this.add.tileSprite(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 'starfield_deep')
+      .setDepth(-36).setAlpha(0.6).setData('scrollSpeed', 0.03);
+    this.add.tileSprite(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 'starfield_near')
+      .setDepth(-35).setAlpha(0.8).setData('scrollSpeed', 0.07);
+
+    // 动态流星点缀（每2-6秒随机划过）
+    this.createShootingStars();
+    // 闪烁星点
+    this.createTwinklingStars();
+    // 宇宙边界（非常微淡）
+    this.createBoundaryHazards(-28);
+    this.createBoundaryForcefield(-27);
+
+    // 选中角色精灵优先，AI通用精灵次之，原始精灵兜底
+    const charTex = this.textures.exists(this.selectedCharacter) ? this.selectedCharacter
+      : this.textures.exists('player_ai') ? 'player_ai' : 'player';
+    this.player = this.physics.add.image(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, charTex);
+    this.player.setDisplaySize(85, 85);
     this.player.setCircle(PLAYER_RADIUS);
     this.player.setDepth(20);
     this.player.setCollideWorldBounds(true);
+
+    // 玩家脚下投影（立体感）
+    this.playerShadow = this.add.ellipse(0, 0, 58, 21, 0x000000, 0.22).setDepth(19);
+
+    // 玩家呼吸脉冲动画
+    const pBaseSX = this.player.scaleX;
+    const pBaseSY = this.player.scaleY;
+    this.tweens.add({
+      targets: this.player,
+      scaleX: pBaseSX * 1.03,
+      scaleY: pBaseSY * 1.03,
+      duration: 1800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+    // 玩家能量光环
+    this.playerAura = this.add.ellipse(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 93, 93, undefined, 0)
+      .setStrokeStyle(2, 0x22ccff, 0.3)
+      .setDepth(18);
+    this.tweens.add({
+      targets: this.playerAura,
+      scaleX: 1.12,
+      scaleY: 1.12,
+      alpha: 0.12,
+      duration: 2000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    // 推进器粒子纹理
+    if (!this.textures.exists('particle_glow')) {
+      const pg = this.add.graphics();
+      pg.fillStyle(0xffffff, 1);
+      pg.fillCircle(4, 4, 4);
+      pg.generateTexture('particle_glow', 8, 8);
+      pg.destroy();
+    }
+    // 推进器粒子发射器
+    this.thrusterEmitter = this.add.particles(0, 0, 'particle_glow', {
+      lifespan: { min: 200, max: 450 },
+      speed: { min: 20, max: 80 },
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      tint: [0x67e8f9, 0x22d3ee, 0x93f4ff],
+      emitting: false,
+      quantity: 1,
+    });
+    this.thrusterEmitter.setDepth(17);
 
     this.enemies = this.physics.add.group();
     this.bullets = this.physics.add.group();
@@ -622,8 +971,12 @@ export class GameScene extends Phaser.Scene {
     this.bossBullets = this.physics.add.group();
 
     this.keys = this.input.keyboard!.addKeys('W,A,S,D') as Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
+    this.input.keyboard!.on('keydown-ESC', () => {
+      if (!this.gameOver && !this.choosingSkill) this.toggleSettingsMenu();
+    });
 
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    this.cameras.main.centerOn(this.player.x, this.player.y);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
   }
 
@@ -631,15 +984,14 @@ export class GameScene extends Phaser.Scene {
     const floorDepth = -32;
     const decorDepth = -25;
 
-    this.createFloorPanels(floorDepth);
     this.createAmbientFloorDetails(floorDepth + 1);
     this.createContainmentCore(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, decorDepth);
 
     [
-      { x: 730, y: 760, w: 920, h: 560, label: 'DATA FARM', tint: 0x0f3d3e },
-      { x: 3450, y: 820, w: 860, h: 540, label: 'MODEL VAULT', tint: 0x26345f },
-      { x: 1080, y: 2420, w: 900, h: 520, label: 'POWER BAY', tint: 0x3f2f0b },
-      { x: 3220, y: 2260, w: 860, h: 540, label: 'RED TEAM LAB', tint: 0x411521 }
+      { x: 730, y: 760, w: 920, h: 560, label: 'DATA FARM', tint: 0x1a5c5e },
+      { x: 3450, y: 820, w: 860, h: 540, label: 'MODEL VAULT', tint: 0x2e3f7a },
+      { x: 1080, y: 2420, w: 900, h: 520, label: 'POWER BAY', tint: 0x5a4815 },
+      { x: 3220, y: 2260, w: 860, h: 540, label: 'RED TEAM LAB', tint: 0x5c1e32 }
     ].forEach((zone) => this.createLabZone(zone.x, zone.y, zone.w, zone.h, zone.label, zone.tint, decorDepth));
 
     this.createServerCluster(520, 590, decorDepth);
@@ -672,21 +1024,7 @@ export class GameScene extends Phaser.Scene {
     ].forEach((beacon, i) => this.createWarningBeacon(beacon.x, beacon.y, decorDepth + 4, i * 130));
 
     this.createBoundaryHazards(decorDepth + 2);
-  }
-
-  private createFloorPanels(depth: number) {
-    for (let y = 160; y < WORLD_HEIGHT; y += 320) {
-      for (let x = 160; x < WORLD_WIDTH; x += 320) {
-        const alternate = ((x + y) / 320) % 2 === 0;
-        this.add.rectangle(x, y, 292, 292, alternate ? 0x0a1620 : 0x08121b, 0.34)
-          .setStrokeStyle(1, 0x164457, 0.1)
-          .setDepth(depth);
-        if (alternate) {
-          this.add.rectangle(x - 96, y - 96, 74, 8, 0x123244, 0.14).setDepth(depth + 1);
-          this.add.rectangle(x + 96, y + 96, 74, 8, 0x123244, 0.12).setDepth(depth + 1);
-        }
-      }
-    }
+    this.createBoundaryForcefield(decorDepth + 3);
   }
 
   private createAmbientFloorDetails(depth: number) {
@@ -713,13 +1051,49 @@ export class GameScene extends Phaser.Scene {
         .setDepth(depth);
     });
 
-    for (let i = 0; i < 18; i++) {
-      const x = 260 + (i * 211) % (WORLD_WIDTH - 520);
-      const y = 240 + (i * 337) % (WORLD_HEIGHT - 480);
-      this.add.rectangle(x, y, 46 + (i % 3) * 16, 6, 0x0f2a36, 0.22)
-        .setRotation((i % 5) * 0.08)
-        .setDepth(depth);
+    // 地面标记碎片 (增加到60个，多样化)
+    for (let i = 0; i < 60; i++) {
+      const x = 120 + ((i * 211) % (WORLD_WIDTH - 240));
+      const y = 120 + ((i * 337) % (WORLD_HEIGHT - 240));
+      const detailType = i % 5;
+      if (detailType === 0) {
+        // 地板裂缝
+        this.add.rectangle(x, y, 38 + (i % 3) * 12, 5, 0x0a1620, 0.3)
+          .setRotation((i % 7 - 3) * 0.1)
+          .setDepth(depth);
+      } else if (detailType === 1) {
+        // 数据流痕迹 (青色短线)
+        this.add.rectangle(x, y, 22 + (i % 3) * 10, 3, 0x22d3ee, 0.15)
+          .setRotation((i % 8) * 0.15)
+          .setDepth(depth);
+      } else if (detailType === 2) {
+        // 火花残痕 (橙色小点)
+        this.add.circle(x, y, 4 + (i % 2) * 2, 0xf59e0b, 0.12).setDepth(depth);
+        this.add.circle(x + 8, y - 5, 3, 0xf59e0b, 0.08).setDepth(depth);
+      } else if (detailType === 3) {
+        // 电缆碎片
+        this.add.rectangle(x, y, 28 + (i % 2) * 14, 3, 0x1f2937, 0.25)
+          .setRotation((i % 4) * 0.25)
+          .setDepth(depth);
+      } else {
+        // 烧焦痕迹
+        this.add.ellipse(x, y, 18 + (i % 3) * 8, 14, 0x1a0a05, 0.15)
+          .setDepth(depth);
+      }
     }
+    // 数据流动画：电缆线上的光点
+    const cablePaths = [
+      [1460, 1280, 730, 760], [2740, 1280, 3450, 820],
+      [1460, 1720, 1080, 2420], [2740, 1720, 3220, 2260],
+      [640, 2070, 1080, 2420], [3560, 1860, 3220, 2260]
+    ];
+    cablePaths.forEach(([x1, y1, x2, y2]) => {
+      for (let j = 0; j < 2; j++) {
+        const dot = this.add.circle(x1, y1, 3, j === 0 ? 0x67e8f9 : 0xfacc15, 0.6).setDepth(depth + 2);
+        dot.setData('path', { x1, y1, x2, y2, t: j * 0.5 });
+        this.dataFlowDots.push(dot);
+      }
+    });
   }
 
   private createLabZone(x: number, y: number, w: number, h: number, label: string, tint: number, depth: number) {
@@ -921,19 +1295,40 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createBoundaryHazards(depth: number) {
-    const hazard = 0xf59e0b;
+    // 宇宙边际：微淡的深空渐变标记，几乎不可见
+    const colors = [0x0a1030, 0x060c20];
     for (let i = 0; i < 28; i++) {
       const x = (i % 14) * 300 + 130;
-      const topY = 88;
-      const bottomY = WORLD_HEIGHT - 88;
-      this.add.rectangle(x, topY, 138, 12, i % 2 === 0 ? hazard : 0x050b11, 0.72).setDepth(depth);
-      this.add.rectangle(x, bottomY, 138, 12, i % 2 === 0 ? 0x050b11 : hazard, 0.72).setDepth(depth);
+      this.add.rectangle(x, 60, 180, 18, colors[i % 2], 0.12).setDepth(depth);
+      this.add.rectangle(x, WORLD_HEIGHT - 60, 180, 18, colors[(i + 1) % 2], 0.12).setDepth(depth);
     }
     for (let i = 0; i < 18; i++) {
       const y = i * 160 + 120;
-      this.add.rectangle(78, y, 12, 86, i % 2 === 0 ? hazard : 0x050b11, 0.55).setDepth(depth);
-      this.add.rectangle(WORLD_WIDTH - 78, y, 12, 86, i % 2 === 0 ? 0x050b11 : hazard, 0.55).setDepth(depth);
+      this.add.rectangle(55, y, 18, 110, colors[i % 2], 0.1).setDepth(depth);
+      this.add.rectangle(WORLD_WIDTH - 55, y, 18, 110, colors[(i + 1) % 2], 0.1).setDepth(depth);
     }
+  }
+
+  private createBoundaryForcefield(depth: number) {
+    const wallAlpha = 0.06;
+    const wallColor = 0x1a1050;
+    // 四条几乎不可见的深空边界
+    const walls = [
+      this.add.rectangle(WORLD_WIDTH / 2, 20, WORLD_WIDTH, 40, wallColor, wallAlpha).setDepth(depth),
+      this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT - 20, WORLD_WIDTH, 40, wallColor, wallAlpha).setDepth(depth),
+      this.add.rectangle(20, WORLD_HEIGHT / 2, 40, WORLD_HEIGHT, wallColor, wallAlpha).setDepth(depth),
+      this.add.rectangle(WORLD_WIDTH - 20, WORLD_HEIGHT / 2, 40, WORLD_HEIGHT, wallColor, wallAlpha).setDepth(depth),
+    ];
+    walls.forEach((wall, i) => {
+      this.tweens.add({
+        targets: wall,
+        alpha: 0.03,
+        duration: 3000 + i * 500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    });
   }
 
   /* ========== HUD ========== */
@@ -999,6 +1394,27 @@ export class GameScene extends Phaser.Scene {
     });
     this.hud.message.setY(this.scale.width < 760 ? 184 : 18);
     this.layoutCommercialButtons();
+
+    // 设置按钮（右下角）
+    const gearBtn = this.add.text(this.scale.width - 38, this.scale.height - 38, '⚙', {
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '26px',
+      color: '#64748b',
+      stroke: '#000',
+      strokeThickness: 3
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(200).setInteractive({ useHandCursor: true });
+
+    gearBtn.on('pointerover', () => gearBtn.setColor('#ffffff'));
+    gearBtn.on('pointerout', () => gearBtn.setColor('#64748b'));
+    gearBtn.on('pointerdown', () => this.toggleSettingsMenu());
+
+    // 窗口大小变化时重新定位
+    this.scale.on('resize', () => {
+      gearBtn.setPosition(this.scale.width - 38, this.scale.height - 38);
+      if (this.settingsMenuOpen) {
+        this.closeSettingsMenu();
+      }
+    });
   }
 
   private layoutBossHud() {
@@ -1044,6 +1460,109 @@ export class GameScene extends Phaser.Scene {
       (this.commercialButtons[i] as Phaser.GameObjects.Rectangle).setPosition(x, y).setScale(scale);
       (this.commercialButtons[i + 1] as Phaser.GameObjects.Text).setPosition(x, y).setScale(scale);
     }
+  }
+
+  /* ========== SETTINGS MENU ========== */
+
+  private toggleSettingsMenu() {
+    if (this.settingsMenuOpen) {
+      this.closeSettingsMenu();
+    } else {
+      this.openSettingsMenu();
+    }
+  }
+
+  private openSettingsMenu() {
+    this.settingsMenuOpen = true;
+    const w = this.scale.width;
+    const items: Phaser.GameObjects.GameObject[] = [];
+    const D = 250;
+
+    // 半透明遮罩（点击关闭）
+    const overlay = this.add.rectangle(0, 0, w, this.scale.height, 0x000000, 0.3)
+      .setOrigin(0).setScrollFactor(0).setDepth(D).setInteractive({ useHandCursor: false });
+    overlay.on('pointerdown', () => this.closeSettingsMenu());
+    items.push(overlay);
+
+    // 菜单面板（右下角，向上展开）
+    const menuX = w - 110;
+    const menuY = this.scale.height - 96;
+    const panel = this.add.rectangle(menuX, menuY, 140, 142, 0x0b1721, 0.95)
+      .setStrokeStyle(1, 0x22d3ee, 0.5)
+      .setScrollFactor(0).setDepth(D + 1);
+    items.push(panel);
+
+    const btnStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif',
+      fontSize: '16px',
+      color: '#cbd7e3',
+      stroke: '#000',
+      strokeThickness: 3
+    };
+
+    // 暂停按钮
+    const isPaused = this.physics.world.isPaused;
+    const pauseLabel = isPaused ? '▶  继续游戏' : '⏸  暂停游戏';
+    items.push(...this.createMenuItem(menuX, menuY - 52, pauseLabel, btnStyle, D, () => {
+      if (this.physics.world.isPaused) {
+        this.physics.world.resume();
+      } else {
+        this.physics.world.pause();
+      }
+      this.closeSettingsMenu();
+    }));
+
+    // 重新开始按钮
+    items.push(...this.createMenuItem(menuX, menuY - 4, '↻  重新开始', btnStyle, D, () => {
+      this.closeSettingsMenu();
+      this.time.delayedCall(200, () => this.scene.restart());
+    }));
+
+    // 返回标题按钮
+    items.push(...this.createMenuItem(menuX, menuY + 44, '⏏  返回标题', btnStyle, D, () => {
+      this.closeSettingsMenu();
+      this.time.delayedCall(200, () => {
+        this.scene.start('TitleScene');
+      });
+    }));
+
+    this.settingsMenuItems = items;
+  }
+
+  private createMenuItem(
+    x: number, y: number, label: string,
+    style: Phaser.Types.GameObjects.Text.TextStyle, depth: number,
+    callback: () => void
+  ): Phaser.GameObjects.GameObject[] {
+    const btnW = 128;
+    const btnH = 38;
+    const bg = this.add.rectangle(x, y, btnW, btnH, 0x1e293b, 0.85)
+      .setStrokeStyle(1, 0x334155, 0.5)
+      .setScrollFactor(0).setDepth(depth + 2)
+      .setInteractive({ useHandCursor: true });
+
+    const txt = this.add.text(x, y, label, style)
+      .setOrigin(0.5).setScrollFactor(0).setDepth(depth + 3);
+
+    bg.on('pointerover', () => {
+      bg.setFillStyle(0x0e7490, 1);
+      bg.setStrokeStyle(1, 0x67e8f9, 0.7);
+      txt.setColor('#ffffff');
+    });
+    bg.on('pointerout', () => {
+      bg.setFillStyle(0x1e293b, 0.85);
+      bg.setStrokeStyle(1, 0x334155, 0.5);
+      txt.setColor('#cbd7e3');
+    });
+    bg.on('pointerdown', callback);
+
+    return [bg, txt];
+  }
+
+  private closeSettingsMenu() {
+    this.settingsMenuOpen = false;
+    this.settingsMenuItems.forEach((el) => el.destroy());
+    this.settingsMenuItems = [];
   }
 
   /* ========== PLAYER MOVEMENT ========== */
@@ -1097,10 +1616,46 @@ export class GameScene extends Phaser.Scene {
     enemy.setData('isBoss', variant === 'boss');
 
     if (variant === 'boss') {
+      enemy.setDisplaySize(512, 512);
       enemy.setCircle(BOSS_SIZE / 2);
       enemy.setDepth(12);
+      // Boss投影
+      const bShadow = this.add.ellipse(x, y + 19, 280, 85, 0x000000, 0.3).setDepth(11);
+      enemy.setData('shadow', bShadow);
+      // 呼吸脉冲动画
+      const baseSX = enemy.scaleX;
+      const baseSY = enemy.scaleY;
+      this.tweens.add({
+        targets: enemy,
+        scaleX: baseSX * 1.06,
+        scaleY: baseSY * 1.06,
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      // 光环
+      const auraRing = this.add.ellipse(x, y, 587, 587, undefined, 0)
+        .setStrokeStyle(3, 0xff4444, 0.35)
+        .setDepth(11);
+      enemy.setData('auraRing', auraRing);
+      this.tweens.add({
+        targets: auraRing,
+        scaleX: 1.2,
+        scaleY: 1.2,
+        alpha: 0.15,
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
     } else {
+      const sz = variant === 'tank' ? 88 : variant === 'elite' ? 80 : 76;
+      enemy.setDisplaySize(sz, sz);
       enemy.setDepth(10);
+      // 敌人投影
+      const eShadow = this.add.ellipse(x, y + 4, sz - 16, sz * 0.35, 0x000000, 0.2).setDepth(9);
+      enemy.setData('shadow', eShadow);
     }
     return enemy;
   }
@@ -1167,6 +1722,18 @@ export class GameScene extends Phaser.Scene {
       targets: txt, scale: 1.2, alpha: 0, duration: 2000,
       ease: 'Sine.easeOut', onComplete: () => txt.destroy()
     });
+
+    // 红色警报闪烁：全屏红色覆盖
+    const alertFlash = this.add.rectangle(w / 2, this.scale.height / 2, w, this.scale.height, 0xff0000, 0)
+      .setScrollFactor(0).setDepth(395);
+    this.tweens.add({
+      targets: alertFlash,
+      alpha: 0.08,
+      duration: 200,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => alertFlash.destroy()
+    });
   }
 
   /* ========== BOSS ATTACK ========== */
@@ -1175,7 +1742,7 @@ export class GameScene extends Phaser.Scene {
     let boss: Phaser.Physics.Arcade.Image | null = null;
     this.enemies.getChildren().forEach((child) => {
       const enemy = child as Phaser.Physics.Arcade.Image;
-      if (enemy.active && enemy.getData('isBoss')) boss = enemy;
+      if (enemy.active && enemy.getData('isBoss') && !enemy.getData('dying')) boss = enemy;
     });
     return boss;
   }
@@ -1384,7 +1951,7 @@ export class GameScene extends Phaser.Scene {
     if (distToLine < BOSS_LASER_DAMAGE_WIDTH && this.contactDamageElapsed >= 500) {
       this.contactDamageElapsed = 0;
       this.stats.hp = Math.max(0, this.stats.hp - 15);
-      this.cameras.main.shake(120, 0.006);
+      this.flashPlayerDamage();
       this.showHitText(this.player.x, this.player.y - 20, '-15', '#ff0000');
       if (this.stats.hp <= 0) {
         this.endGame(false);
@@ -1482,7 +2049,7 @@ export class GameScene extends Phaser.Scene {
     if (distance <= radius + PLAYER_RADIUS * 0.35 && this.contactDamageElapsed >= 320) {
       this.contactDamageElapsed = 0;
       this.stats.hp = Math.max(0, this.stats.hp - 12);
-      this.cameras.main.shake(90, 0.005);
+      this.flashPlayerDamage();
       this.showHitText(this.player.x, this.player.y - 20, '-12', '#ff8a65');
       if (this.stats.hp <= 0) {
         this.endGame(false);
@@ -1513,7 +2080,7 @@ export class GameScene extends Phaser.Scene {
         bullet.destroy();
         const damage = (bullet.getData('damage') as number | undefined) ?? 10;
         this.stats.hp = Math.max(0, this.stats.hp - damage);
-        this.cameras.main.shake(80, 0.004);
+        this.flashPlayerDamage();
         this.showHitText(this.player.x, this.player.y - 20, `-${damage}`, '#ff5252');
         if (this.stats.hp <= 0) {
           this.endGame(false);
@@ -1531,6 +2098,8 @@ export class GameScene extends Phaser.Scene {
       const enemy = child as Phaser.Physics.Arcade.Image;
       if (!enemy.active) return;
 
+      if (enemy.getData('dying')) return;
+
       const isBoss = enemy.getData('isBoss') as boolean;
       const spd = enemy.getData('speed') as number;
       const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
@@ -1542,12 +2111,17 @@ export class GameScene extends Phaser.Scene {
       if (distance <= PLAYER_RADIUS + size) {
         touchingPlayer = true;
       }
+      // 同步阴影和光环位置
+      const shadow = enemy.getData('shadow') as Phaser.GameObjects.Ellipse | undefined;
+      if (shadow) { shadow.setPosition(enemy.x, enemy.y + (isBoss ? 14 : 2)); }
+      const auraRing = enemy.getData('auraRing') as Phaser.GameObjects.Ellipse | undefined;
+      if (auraRing) { auraRing.setPosition(enemy.x, enemy.y); }
     });
 
     if (touchingPlayer && this.contactDamageElapsed >= 700) {
       this.contactDamageElapsed = 0;
       this.stats.hp = Math.max(0, this.stats.hp - 8);
-      this.cameras.main.shake(90, 0.004);
+      this.flashPlayerDamage();
       if (this.stats.hp <= 0) {
         this.endGame(false);
       }
@@ -1716,7 +2290,7 @@ export class GameScene extends Phaser.Scene {
   private throwMolotov(targetX: number, targetY: number, level: number) {
     const startX = this.player.x;
     const startY = this.player.y - 14;
-    const bottle = this.add.image(startX, startY, 'weapon_molotov').setDepth(18);
+    const bottle = this.add.image(startX, startY, 'weapon_molotov').setDisplaySize(20, 26).setDepth(18);
     const distance = Phaser.Math.Distance.Between(startX, startY, targetX, targetY);
     const flightMs = Phaser.Math.Clamp(distance / 2.2, 360, 760);
     this.tweens.add({
@@ -1781,7 +2355,7 @@ export class GameScene extends Phaser.Scene {
 
   private fireMissile(target: Phaser.Physics.Arcade.Image, level: number) {
     if (!target.active) return;
-    const missile = this.add.image(this.player.x, this.player.y - 10, 'weapon_missile').setDepth(18);
+    const missile = this.add.image(this.player.x, this.player.y - 10, 'weapon_missile').setDisplaySize(24, 16).setDepth(18);
     const startX = missile.x;
     const startY = missile.y;
     const targetX = target.x;
@@ -1830,7 +2404,7 @@ export class GameScene extends Phaser.Scene {
     const y2 = y + dy;
     const carrierStartX = x1 - Math.cos(angle) * 120;
     const carrierStartY = y1 - Math.sin(angle) * 120;
-    const carrier = this.add.image(carrierStartX, carrierStartY, 'weapon_laser_sat')
+    const carrier = this.add.image(carrierStartX, carrierStartY, 'weapon_laser_sat').setDisplaySize(36, 36)
       .setDepth(26)
       .setAlpha(0)
       .setRotation(angle + Math.PI / 2);
@@ -1931,7 +2505,7 @@ export class GameScene extends Phaser.Scene {
     const droneLevel = this.skillLevels.drone;
     const droneCount = droneLevel > 0 ? Math.min(4, 1 + Math.floor((droneLevel + 1) / 2) + (droneLevel >= 5 ? 1 : 0)) : 0;
     while (this.droneVisuals.length < droneCount) {
-      this.droneVisuals.push(this.add.image(this.player.x, this.player.y, 'weapon_drone').setDepth(22));
+      this.droneVisuals.push(this.add.image(this.player.x, this.player.y, 'weapon_drone').setDisplaySize(48, 48).setDepth(22));
     }
     while (this.droneVisuals.length > droneCount) {
       this.droneVisuals.pop()?.destroy();
@@ -1946,7 +2520,7 @@ export class GameScene extends Phaser.Scene {
     const bladeCount = bladeLevel > 0 ? Math.min(6, bladeLevel + (bladeLevel >= 5 ? 1 : 0)) : 0;
     const bladeRadius = (82 + bladeLevel * 11) * this.getRangeScale();
     while (this.bladeVisuals.length < bladeCount) {
-      this.bladeVisuals.push(this.add.image(this.player.x, this.player.y, 'weapon_blade').setDepth(21));
+      this.bladeVisuals.push(this.add.image(this.player.x, this.player.y, 'weapon_blade').setDisplaySize(56, 56).setDepth(21));
     }
     while (this.bladeVisuals.length > bladeCount) {
       this.bladeVisuals.pop()?.destroy();
@@ -2053,7 +2627,7 @@ export class GameScene extends Phaser.Scene {
     const lenSq = dx * dx + dy * dy;
     this.enemies.getChildren().forEach((child) => {
       const enemy = child as Phaser.Physics.Arcade.Image;
-      if (!enemy.active) return;
+      if (!enemy.active || enemy.getData('dying')) return;
       const t = Phaser.Math.Clamp(((enemy.x - x1) * dx + (enemy.y - y1) * dy) / lenSq, 0, 1);
       const closestX = x1 + t * dx;
       const closestY = y1 + t * dy;
@@ -2080,20 +2654,66 @@ export class GameScene extends Phaser.Scene {
 
     this.showHitText(enemy.x, enemy.y, Math.ceil(finalDmg).toString(), isCrit ? '#ffd700' : '#fff275');
 
+    // Boss受击闪白
+    const isBoss = enemy.getData('isBoss') as boolean;
+    if (isBoss && hp > 0) {
+      enemy.setTint(0xffffff);
+      this.time.delayedCall(80, () => {
+        if (enemy.active) enemy.clearTint();
+      });
+    }
+
     if (hp <= 0) {
       const x = enemy.x;
       const y = enemy.y;
-      const isBoss = enemy.getData('isBoss') as boolean;
+
+      if (isBoss) {
+        // Boss死亡动画：放大+淡出
+        enemy.setData('dying', true);
+        (enemy.body as Phaser.Physics.Arcade.Body).enable = false;
+        this.tweens.killTweensOf(enemy);
+        this.hud.bossHp.setVisible(false);
+        this.hud.bossBarBg.setVisible(false);
+        this.hud.bossBar.setVisible(false);
+
+        const shadow = enemy.getData('shadow') as Phaser.GameObjects.Ellipse | undefined;
+        const auraRing = enemy.getData('auraRing') as Phaser.GameObjects.Ellipse | undefined;
+        if (auraRing) {
+          this.tweens.killTweensOf(auraRing);
+          this.tweens.add({ targets: auraRing, alpha: 0, scaleX: 1.8, scaleY: 1.8, duration: 550, ease: 'Sine.easeOut' });
+        }
+        if (shadow) {
+          this.tweens.add({ targets: shadow, alpha: 0, duration: 550 });
+        }
+
+        this.tweens.add({
+          targets: enemy,
+          scaleX: enemy.scaleX * 1.5,
+          scaleY: enemy.scaleY * 1.5,
+          alpha: 0,
+          duration: 550,
+          ease: 'Sine.easeOut',
+          onComplete: () => {
+            if (shadow) shadow.destroy();
+            if (auraRing) auraRing.destroy();
+            enemy.destroy();
+            this.onBossDefeated(x, y);
+            this.showDeathEffect(x, y, true);
+          }
+        });
+        // 立即显示死亡特效
+        this.showDeathEffect(x, y, true);
+        return;
+      }
+
+      const shadow = enemy.getData('shadow') as Phaser.GameObjects.Ellipse | undefined;
+      if (shadow) shadow.destroy();
       enemy.destroy();
       this.kills += 1;
 
-      if (isBoss) {
-        this.onBossDefeated(x, y);
-      } else {
-        this.dropXp(x, y, 4);
-        this.tryDropLoot(x, y);
-      }
-      this.showDeathEffect(x, y, isBoss);
+      this.dropXp(x, y, 4);
+      this.tryDropLoot(x, y);
+      this.showDeathEffect(x, y, false);
     }
   }
 
@@ -2158,11 +2778,28 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private flashPlayerDamage() {
+    this.cameras.main.shake(90, 0.004);
+    this.player.setTint(0xff4444);
+    this.tweens.add({
+      targets: this.player,
+      alpha: 0.35,
+      duration: 80,
+      yoyo: true,
+      repeat: 3,
+      onComplete: () => {
+        this.player.clearTint();
+        this.player.setAlpha(1);
+      }
+    });
+  }
+
   /* ========== XP & LOOT DROPS ========== */
 
   private dropXp(x: number, y: number, value: number) {
     const orb = this.xpOrbs.create(x, y, 'xp') as Phaser.Physics.Arcade.Image;
     orb.setCircle(XP_RADIUS);
+    orb.setDisplaySize(16, 16);
     orb.setData('value', value);
     orb.setDepth(14);
     this.tweens.add({
@@ -2185,10 +2822,14 @@ export class GameScene extends Phaser.Scene {
   private dropLoot(x: number, y: number, type: LootType) {
     const tex = type === 'xp' ? 'xp' : `loot_${type}`;
     const orb = this.lootDrops.create(x, y, tex) as Phaser.Physics.Arcade.Image;
-    orb.setCircle(type === 'health' ? 8 : LOOT_RADIUS);
+    orb.setCircle(type === 'health' ? 16 : LOOT_RADIUS);
     orb.setData('lootType', type);
     orb.setData('value', type === 'gold' ? Phaser.Math.Between(1, 5) : 1);
     orb.setDepth(15);
+    if (type !== 'xp') {
+      const sz = type === 'health' ? 32 : 40;
+      orb.setDisplaySize(sz, type === 'health' ? 48 : sz);
+    }
     this.tweens.add({
       targets: orb, scale: 1.2, duration: 500,
       yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
@@ -2611,7 +3252,8 @@ export class GameScene extends Phaser.Scene {
       range: '雷达阵列', moveSpeed: '离子尾迹', heal: '纳米修复舱', orbit: '三重防火墙', aura: 'EMP 场域'
     };
     const w = this.scale.width;
-    const txt = this.add.text(w / 2, this.scale.height / 2 - 140, `${names[skillId]} 已解锁`, {
+    const h = this.scale.height;
+    const txt = this.add.text(w / 2, h / 2 - 140, `${names[skillId]} 已解锁`, {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif',
       fontSize: '34px', color: '#8df7ff', stroke: '#000', strokeThickness: 8
     }).setOrigin(0.5).setScrollFactor(0).setDepth(500);
@@ -2619,6 +3261,32 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: txt, scale: 1.3, alpha: 0, duration: 2200,
       ease: 'Sine.easeOut', onComplete: () => txt.destroy()
+    });
+
+    // 金色光柱从玩家位置升起
+    const pillar = this.add.rectangle(this.player.x, this.player.y - 300, 80, 600, 0xffd700, 0.35)
+      .setDepth(45);
+    this.tweens.add({
+      targets: pillar, alpha: 0, scaleX: 1.6, scaleY: 1.3, duration: 800,
+      ease: 'Sine.easeOut', onComplete: () => pillar.destroy()
+    });
+    // 光柱粒子环
+    for (let i = 0; i < 3; i++) {
+      const ring = this.add.circle(this.player.x, this.player.y, 40 + i * 20, 0xffd700, 0)
+        .setStrokeStyle(3 - i, 0xffd700, 0.7 - i * 0.2)
+        .setDepth(46);
+      this.tweens.add({
+        targets: ring, scale: 3, alpha: 0, duration: 700 + i * 120,
+        ease: 'Sine.easeOut', delay: i * 80,
+        onComplete: () => ring.destroy()
+      });
+    }
+    // 全屏闪白
+    const flash = this.add.rectangle(w / 2, h / 2, w, h, 0xffffff, 0.15)
+      .setScrollFactor(0).setDepth(498);
+    this.tweens.add({
+      targets: flash, alpha: 0, duration: 400,
+      onComplete: () => flash.destroy()
     });
   }
 
@@ -2629,10 +3297,26 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.pause();
     this.player.setVelocity(0, 0);
 
-    this.hud.bossHp.setVisible(false);
-    this.hud.bossBarBg.setVisible(false);
-    this.hud.bossBar.setVisible(false);
+    // 可复活时显示内联UI，否则跳转到结算场景
+    if (!win && !this.reviveUsed) {
+      this.showReviveUI();
+      return;
+    }
 
+    // 跳转结算场景
+    this.time.delayedCall(400, () => {
+      this.scene.start('GameOverScene', {
+        win,
+        level: this.level,
+        kills: this.kills,
+        gold: this.gold,
+        elapsedMs: this.elapsedMs,
+        shots: this.shots
+      });
+    });
+  }
+
+  private showReviveUI() {
     const w = this.scale.width;
     const h = this.scale.height;
     const D = 300;
@@ -2640,49 +3324,51 @@ export class GameScene extends Phaser.Scene {
     const darkBg = this.add.rectangle(w / 2, h / 2, w, h, 0x000000, 0.7).setScrollFactor(0).setDepth(D);
     this.overlayElements.push(darkBg);
 
-    const resultText = win ? '隔离成功' : '实验员离线';
-    const resultColor = win ? '#8df7ff' : '#ff6b8a';
-    const title = this.add.text(w / 2, h / 2 - 100, resultText, {
-      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '42px',
-      color: resultColor, stroke: '#000', strokeThickness: 6
+    const title = this.add.text(w / 2, h / 2 - 80, '实验员离线', {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '40px',
+      color: '#ff6b8a', stroke: '#000', strokeThickness: 6
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
     this.overlayElements.push(title);
 
-    const statsLine = [
-      `Lv.${this.level}`,
-      `清除 ${this.kills}`,
-      `算力 ${this.gold}`,
-      `${Math.ceil(this.elapsedMs / 1000)}s`
-    ].join('  |  ');
-    const stats = this.add.text(w / 2, h / 2 - 20, statsLine, {
-      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px',
-      color: '#f6f1e7', stroke: '#000', strokeThickness: 4
+    const sub = this.add.text(w / 2, h / 2 - 30, `存活: ${Math.ceil(this.elapsedMs / 1000)}s  |  Lv.${this.level}  |  清除: ${this.kills}`, {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '16px',
+      color: '#94a3b8', stroke: '#000', strokeThickness: 4
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-    this.overlayElements.push(stats);
+    this.overlayElements.push(sub);
 
-    if (!win && !this.reviveUsed) {
-      const reviveBtn = this.add.rectangle(w / 2, h / 2 + 50, 240, 44, 0x7c2d12, 0.9)
-        .setStrokeStyle(2, 0xffd966, 0.8).setScrollFactor(0).setDepth(D)
-        .setInteractive({ useHandCursor: true });
-      const reviveLabel = this.add.text(w / 2, h / 2 + 50, '观看赞助补给 (恢复50%生命)', {
-        fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '16px', color: '#ffd966'
-      }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-      reviveBtn.on('pointerover', () => reviveBtn.setFillStyle(0xa0522d, 0.95));
-      reviveBtn.on('pointerout', () => reviveBtn.setFillStyle(0x8b4513, 0.9));
-      reviveBtn.on('pointerdown', () => this.tryAdRevive());
-      this.overlayElements.push(reviveBtn, reviveLabel);
-    }
-
-    const restartBtn = this.add.rectangle(w / 2, h / 2 + 110, 200, 44, 0x0e7490, 0.95)
-      .setStrokeStyle(2, 0x67e8f9, 0.8).setScrollFactor(0).setDepth(D)
+    // 复活按钮
+    const reviveBtn = this.add.rectangle(w / 2, h / 2 + 30, 260, 48, 0x7c2d12, 0.9)
+      .setStrokeStyle(2, 0xffd966, 0.8).setScrollFactor(0).setDepth(D)
       .setInteractive({ useHandCursor: true });
-    const restartLabel = this.add.text(w / 2, h / 2 + 110, '重启实验', {
-      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '18px', color: '#f6f1e7'
+    const reviveLabel = this.add.text(w / 2, h / 2 + 30, '观看赞助补给 (恢复50%生命)', {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '16px', color: '#ffd966'
     }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-    restartBtn.on('pointerover', () => restartBtn.setFillStyle(0x1976d2, 0.98));
-    restartBtn.on('pointerout', () => restartBtn.setFillStyle(0x1565c0, 0.95));
-    restartBtn.on('pointerdown', () => this.scene.restart());
-    this.overlayElements.push(restartBtn, restartLabel);
+    reviveBtn.on('pointerover', () => reviveBtn.setFillStyle(0xa0522d, 0.95));
+    reviveBtn.on('pointerout', () => reviveBtn.setFillStyle(0x8b4513, 0.9));
+    reviveBtn.on('pointerdown', () => this.tryAdRevive());
+    this.overlayElements.push(reviveBtn, reviveLabel);
+
+    // 放弃按钮
+    const quitBtn = this.add.rectangle(w / 2, h / 2 + 90, 180, 40, 0x1e293b, 0.9)
+      .setStrokeStyle(1, 0x64748b, 0.5).setScrollFactor(0).setDepth(D)
+      .setInteractive({ useHandCursor: true });
+    const quitLabel = this.add.text(w / 2, h / 2 + 90, '放弃实验', {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif', fontSize: '14px', color: '#94a3b8'
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
+    quitBtn.on('pointerover', () => quitBtn.setFillStyle(0x334155, 1));
+    quitBtn.on('pointerout', () => quitBtn.setFillStyle(0x1e293b, 0.9));
+    quitBtn.on('pointerdown', () => {
+      this.clearOverlay();
+      this.scene.start('GameOverScene', {
+        win: false,
+        level: this.level,
+        kills: this.kills,
+        gold: this.gold,
+        elapsedMs: this.elapsedMs,
+        shots: this.shots
+      });
+    });
+    this.overlayElements.push(quitBtn, quitLabel);
   }
 
   private tryAdUpgrade() {
@@ -2895,6 +3581,21 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /* ========== DATA FLOW ANIMATION ========== */
+
+  private updateDataFlow(delta: number) {
+    this.dataFlowDots.forEach((dot) => {
+      if (!dot.active) return;
+      const path = dot.getData('path') as { x1: number; y1: number; x2: number; y2: number; t: number };
+      path.t += delta * 0.00015;
+      if (path.t > 1) path.t -= 1;
+      const x = path.x1 + (path.x2 - path.x1) * path.t;
+      const y = path.y1 + (path.y2 - path.y1) * path.t;
+      dot.setPosition(x, y);
+      dot.setAlpha(0.3 + Math.sin(path.t * Math.PI) * 0.4);
+    });
+  }
+
   /* ========== EVOLUTION MECHANICS ========== */
 
   private updateFireTrail(delta: number) {
@@ -2907,8 +3608,8 @@ export class GameScene extends Phaser.Scene {
       this.fireTrailElapsed = 0;
       // Spawn fire behind player
       const angle = Math.atan2(this.player.body!.velocity.y, this.player.body!.velocity.x) + Math.PI;
-      const fx = this.player.x + Math.cos(angle) * 22;
-      const fy = this.player.y + Math.sin(angle) * 22;
+      const fx = this.player.x + Math.cos(angle) * 44;
+      const fy = this.player.y + Math.sin(angle) * 44;
       const fire = this.add.circle(fx, fy, 10, 0xff6d00, 0.5)
         .setStrokeStyle(2, 0xffab00, 0.7).setDepth(13);
 
@@ -2996,7 +3697,7 @@ export class GameScene extends Phaser.Scene {
       let bossMaxHp = 1;
       this.enemies.getChildren().forEach((child) => {
         const enemy = child as Phaser.Physics.Arcade.Image;
-        if (enemy.active && enemy.getData('isBoss')) {
+        if (enemy.active && enemy.getData('isBoss') && !enemy.getData('dying')) {
           bossHp = enemy.getData('hp') as number;
           bossMaxHp = enemy.getData('maxHp') as number;
         }

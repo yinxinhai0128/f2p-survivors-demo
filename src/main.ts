@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
 import './styles.css';
+import { BootScene } from './scenes/BootScene';
+import { TitleScene } from './scenes/TitleScene';
 import { GameScene } from './scenes/GameScene';
+import { GameOverScene } from './scenes/GameOverScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: 'app',
-  backgroundColor: '#07111a',
+  backgroundColor: '#0b1721',
   scale: {
     mode: Phaser.Scale.RESIZE,
     width: window.innerWidth,
@@ -18,7 +21,7 @@ const config: Phaser.Types.Core.GameConfig = {
       gravity: { x: 0, y: 0 }
     }
   },
-  scene: [GameScene]
+  scene: [BootScene, TitleScene, GameScene, GameOverScene]
 };
 
 new Phaser.Game(config);

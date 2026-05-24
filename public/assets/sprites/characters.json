@@ -1,0 +1,26 @@
+{
+  "drone_assault": {
+    "name": "突击型",
+    "desc": "均衡战斗无人机，适合新手"
+  },
+  "drone_stealth": {
+    "name": "暗影型",
+    "desc": "高速低护甲，灵活机动"
+  },
+  "drone_heavy": {
+    "name": "重装型",
+    "desc": "高耐久低速度，近战专精"
+  },
+  "drone_speed": {
+    "name": "疾风型",
+    "desc": "极致速度，玻璃大炮"
+  },
+  "drone_support": {
+    "name": "支援型",
+    "desc": "经验加成，辅助成长"
+  },
+  "drone_elite": {
+    "name": "原型机",
+    "desc": "上古科技遗物，全属性优异"
+  }
+}

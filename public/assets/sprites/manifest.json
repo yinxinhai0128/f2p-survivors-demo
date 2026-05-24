@@ -1,0 +1,20 @@
+{
+  "sprites": [
+    "player",
+    "enemy",
+    "enemy_fast",
+    "enemy_tank",
+    "enemy_elite",
+    "boss_demon",
+    "boss_eye",
+    "boss_reaper",
+    "weapon_drone",
+    "weapon_blade",
+    "weapon_molotov",
+    "weapon_missile",
+    "weapon_laser_sat",
+    "loot_magnet",
+    "loot_health",
+    "loot_gold"
+  ]
+}
