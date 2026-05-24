@@ -8,12 +8,12 @@ interface CharDef {
 }
 
 const CHARACTERS: CharDef[] = [
-  { id: 'drone_assault', name: '突击型', desc: '均衡战斗无人机，适合新手', accentColor: 0x67e8f9 },
-  { id: 'drone_stealth', name: '暗影型', desc: '高速低护甲，灵活机动', accentColor: 0xa855f7 },
-  { id: 'drone_heavy', name: '重装型', desc: '高耐久低速度，近战专精', accentColor: 0xf97316 },
-  { id: 'drone_speed', name: '疾风型', desc: '极致速度，玻璃大炮', accentColor: 0x4ade80 },
-  { id: 'drone_support', name: '支援型', desc: '经验加成，辅助成长', accentColor: 0xfacc15 },
-  { id: 'drone_elite', name: '原型机', desc: '上古科技遗物，全属性优异', accentColor: 0xffffff },
+  { id: 'drone_assault', name: '突击型', desc: '起始武器：无人机僚机\n均衡战斗无人机，适合新手', accentColor: 0x67e8f9 },
+  { id: 'drone_stealth', name: '暗影型', desc: '起始武器：激光卫星\n高速低护甲，灵活机动', accentColor: 0xa855f7 },
+  { id: 'drone_heavy', name: '重装型', desc: '起始武器：伤害光环\n高耐久低速度，近战专精', accentColor: 0xf97316 },
+  { id: 'drone_speed', name: '疾风型', desc: '起始武器：追踪导弹\n极致速度，玻璃大炮', accentColor: 0x4ade80 },
+  { id: 'drone_support', name: '支援型', desc: '起始武器：飞剑护体\n经验加成，辅助成长', accentColor: 0xfacc15 },
+  { id: 'drone_elite', name: '原型机', desc: '起始武器：燃烧弹\n上古科技遗物，全属性优异', accentColor: 0xffffff },
 ];
 
 export class TitleScene extends Phaser.Scene {
@@ -24,6 +24,9 @@ export class TitleScene extends Phaser.Scene {
   private selectElements: Phaser.GameObjects.GameObject[] = [];
   private selectDynamic: { sprite?: Phaser.GameObjects.Image; name?: Phaser.GameObjects.Text; desc?: Phaser.GameObjects.Text; glow?: Phaser.GameObjects.Ellipse; dots?: Phaser.GameObjects.Arc[] } = {};
   private rotatingBlocks: Phaser.GameObjects.Rectangle[] = [];
+  private difficulty: string = 'normal';
+  private diffButtons: Phaser.GameObjects.Rectangle[] = [];
+  private diffLabels: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super({ key: 'TitleScene' });
@@ -35,6 +38,8 @@ export class TitleScene extends Phaser.Scene {
     this.mainElements = [];
     this.selectElements = [];
     this.rotatingBlocks = [];
+    this.diffButtons = [];
+    this.diffLabels = [];
     this.inSelectMode = false;
 
     this.cameras.main.setBackgroundColor('#0b1721');
@@ -227,8 +232,62 @@ export class TitleScene extends Phaser.Scene {
     });
     btn.on('pointerdown', () => this.openSelect());
 
+    // 难度选择
+    const diffY = h * 0.69;
+    this.add.text(w / 2, diffY - 18, '难度选择', {
+      fontFamily: 'Microsoft YaHei, Arial, sans-serif',
+      fontSize: '13px', color: '#64748b'
+    }).setOrigin(0.5).setDepth(10);
+
+    const diffs: { id: string; label: string; color: number }[] = [
+      { id: 'easy', label: '简 单', color: 0x4ade80 },
+      { id: 'normal', label: '普 通', color: 0xfacc15 },
+      { id: 'hard', label: '困 难', color: 0xf87171 },
+    ];
+    const diffBtnW = 80;
+    const diffBtnH = 30;
+    const diffGap = 12;
+    const diffStartX = w / 2 - (diffs.length * (diffBtnW + diffGap) - diffGap) / 2 + diffBtnW / 2;
+
+    diffs.forEach((d, i) => {
+      const bx = diffStartX + i * (diffBtnW + diffGap);
+      const active = this.difficulty === d.id;
+      const bgColor = active ? d.color : 0x1e293b;
+      const bgAlpha = active ? 0.35 : 0.7;
+
+      const dBtn = this.add.rectangle(bx, diffY + 10, diffBtnW, diffBtnH, bgColor, bgAlpha)
+        .setStrokeStyle(active ? 2 : 1, d.color, active ? 0.9 : 0.4)
+        .setDepth(10)
+        .setInteractive({ useHandCursor: true });
+
+      const dLbl = this.add.text(bx, diffY + 10, d.label, {
+        fontFamily: 'Microsoft YaHei, Arial, sans-serif',
+        fontSize: '13px', color: active ? '#ffffff' : '#94a3b8'
+      }).setOrigin(0.5).setDepth(11);
+
+      dBtn.on('pointerdown', () => {
+        this.difficulty = d.id;
+        this.updateDiffButtons();
+      });
+      dBtn.on('pointerover', () => {
+        if (this.difficulty !== d.id) {
+          dBtn.setStrokeStyle(1, d.color, 0.7);
+          dLbl.setColor('#cbd5e1');
+        }
+      });
+      dBtn.on('pointerout', () => {
+        if (this.difficulty !== d.id) {
+          dBtn.setStrokeStyle(1, d.color, 0.4);
+          dLbl.setColor('#94a3b8');
+        }
+      });
+
+      this.diffButtons.push(dBtn);
+      this.diffLabels.push(dLbl);
+    });
+
     // 底部提示
-    this.add.text(w / 2, h * 0.75, 'WASD 移动 | 自动瞄准射击 | 收集经验升级', {
+    this.add.text(w / 2, h * 0.78, 'WASD 移动 | 自动瞄准射击 | 收集经验升级', {
       fontFamily: 'Microsoft YaHei, Arial, sans-serif',
       fontSize: '13px', color: '#64748b'
     }).setOrigin(0.5).setDepth(10);
@@ -236,12 +295,6 @@ export class TitleScene extends Phaser.Scene {
     this.add.text(w / 2, h - 30, 'F2P Survivors Demo · Phaser 3 · 2026', {
       fontFamily: 'Arial, sans-serif',
       fontSize: '11px', color: '#475569'
-    }).setOrigin(0.5).setDepth(10);
-
-    // 已选机体提示
-    this.add.text(w / 2, btnY + 42, this.getSelectionHint(), {
-      fontFamily: 'Microsoft YaHei, Arial, sans-serif',
-      fontSize: '12px', color: '#4b5563'
     }).setOrigin(0.5).setDepth(10);
 
     this.mainElements.push(
@@ -472,10 +525,22 @@ export class TitleScene extends Phaser.Scene {
     }));
   }
 
+  private updateDiffButtons() {
+    const colors: Record<string, number> = { easy: 0x4ade80, normal: 0xfacc15, hard: 0xf87171 };
+    const ids = ['easy', 'normal', 'hard'];
+    ids.forEach((id, i) => {
+      const active = this.difficulty === id;
+      const c = colors[id];
+      this.diffButtons[i].setFillStyle(active ? c : 0x1e293b, active ? 0.35 : 0.7);
+      this.diffButtons[i].setStrokeStyle(active ? 2 : 1, c, active ? 0.9 : 0.4);
+      this.diffLabels[i].setColor(active ? '#ffffff' : '#94a3b8');
+    });
+  }
+
   private launchGame() {
     this.cameras.main.fadeOut(400, 0, 0, 0);
     this.time.delayedCall(400, () => {
-      this.scene.start('GameScene', { character: this.getCurrentChar().id });
+      this.scene.start('GameScene', { character: this.getCurrentChar().id, difficulty: this.difficulty });
     });
   }
 

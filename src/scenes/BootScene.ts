@@ -29,9 +29,9 @@ export class BootScene extends Phaser.Scene {
       bar.setX(w / 2 - 158 + (316 * v) / 2);
     });
 
-    // 加载精灵图（与 GameScene preload 一致）
+    // 加载精灵图
     const SPRITE_NAMES = [
-      'player', 'enemy', 'enemy_fast', 'enemy_tank', 'enemy_elite',
+      'player',
       'boss_demon', 'boss_eye', 'boss_reaper',
       'weapon_drone', 'weapon_blade', 'weapon_molotov', 'weapon_missile', 'weapon_laser_sat',
       'loot_magnet', 'loot_health', 'loot_gold',
@@ -42,6 +42,11 @@ export class BootScene extends Phaser.Scene {
     for (const name of SPRITE_NAMES) {
       this.load.image(name, `assets/sprites/${name}.png`);
     }
+    // 敌人精灵图
+    this.load.image('enemy', 'assets/sprites/enemy1.png');
+    this.load.image('enemy_fast', 'assets/sprites/enemy2.png');
+    this.load.image('enemy_tank', 'assets/sprites/enemy3.png');
+    this.load.image('enemy_elite', 'assets/sprites/enemy4.png');
 
     this.load.on('complete', () => {
       logo.destroy();
